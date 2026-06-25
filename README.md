@@ -10,10 +10,11 @@ orchestrated by [`CLAUDE.md`](CLAUDE.md), calling **skills** that call **tools**
 query a single SQLite file. Mock UI "components" are rendered as self-contained HTML
 cards with embedded charts.
 
-> **Design note.** The visual language lives entirely in
-> [`assets/theme.css`](assets/theme.css) as design tokens, so it can be re-skinned to
-> match the prior **Jetski** demo in one file once that repo is reachable from the
-> sandbox. (It wasn't at build time — network is scoped to this repo.)
+> **Design note.** The visual language is the **Jetski** design system (Material 3
+> dark, Google-blue primary + cyan accent), reproduced from
+> [`jetski-design/`](jetski-design/) (`DESIGN.md` + `globals.css` + `ui.tsx`). It
+> lives entirely in [`assets/theme.css`](assets/theme.css) as design tokens, so the
+> whole demo re-themes from one file.
 
 ## Architecture (three layers)
 ```

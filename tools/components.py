@@ -62,7 +62,7 @@ def card_key_driver():
     rows = ""
     for e in r["evidence"]:
         cls = " class='is-cause'" if e["is_cause"] else ""
-        tag = " 🔴" if e["is_cause"] else ""
+        tag = " <span class='ds-pill ds-pill--bad'>cause</span>" if e["is_cause"] else ""
         rows += (f"<tr{cls}><td>{e['cell']}{tag}</td>"
                  f"<td class='num'>{e['first']}</td><td class='num'>{e['last']}</td>"
                  f"<td class='num'>{e['change_pct']:+.0f}%</td></tr>")
@@ -72,8 +72,8 @@ def card_key_driver():
     conf = r["confidence"]
     body = f"""
     <div class="ds-card">
-      <div class="ds-card__kicker">🔍 Key-driver analysis</div>
-      <h2 class="ds-card__title">Why is Weekly Active Users down {abs(o['change_pct'])}%?</h2>
+      <div class="ds-card__kicker">Key-driver analysis</div>
+      <h2 class="ds-card__title">Why is weekly active down {abs(o['change_pct'])}%?</h2>
       <p class="ds-card__sub">wk{o['first_week']} → wk{o['last_week']}: {o['wau_first']} → {o['wau_last']} active users.</p>
       <div class="ds-metrics">
         <div class="ds-metric ds-metric--bad"><div class="ds-metric__val">{t['change_pct']}%</div>
@@ -127,7 +127,7 @@ def card_alert():
     win_rate = round(100 * win[1] / win[0], 1) if win[0] else 0
     body = f"""
     <div class="ds-card ds-alert">
-      <div class="ds-card__kicker">⚠️ Threshold breach · autonomous alert</div>
+      <div class="ds-card__kicker">Threshold breach · autonomous alert</div>
       <h2 class="ds-card__title">EMEA error rate broke 5% in week 6</h2>
       <p class="ds-card__sub">I noticed this without being asked. Want me to dig in?</p>
       <div class="ds-metrics">
@@ -169,13 +169,13 @@ def panel_cleaning():
     samp = "".join(f"<tr><td>{s[0]}</td><td>{s[1]}</td><td class='num'>{s[2]}</td></tr>" for s in sample)
     body = f"""
     <div class="ds-card">
-      <div class="ds-card__kicker">🧹 Data cleaning · approval required</div>
+      <div class="ds-card__kicker">Data cleaning · approval required</div>
       <h2 class="ds-card__title">I found 3 data-quality issues. Approve fixes?</h2>
       <p class="ds-card__sub">I can detect these on my own (read-only). I will not write
       anything until you approve — your call, per issue.</p>
 
       <div class="ds-approve">
-        <div class="ds-approve__icon">🔁</div>
+        <div class="ds-approve__icon">⧉</div>
         <div class="ds-approve__body">
           <div class="ds-approve__h">{dups} duplicate session rows</div>
           <div class="ds-approve__d">Same <code>session_id</code> logged twice. Proposed fix:
@@ -186,7 +186,7 @@ def panel_cleaning():
       </div>
 
       <div class="ds-approve">
-        <div class="ds-approve__icon">➖</div>
+        <div class="ds-approve__icon">−</div>
         <div class="ds-approve__body">
           <div class="ds-approve__h">{negs} negative durations</div>
           <div class="ds-approve__d">Clock bug — <code>duration_sec &lt; 0</code>. Proposed fix:
@@ -199,7 +199,7 @@ def panel_cleaning():
       </div>
 
       <div class="ds-approve">
-        <div class="ds-approve__icon">🔤</div>
+        <div class="ds-approve__icon">Aa</div>
         <div class="ds-approve__body">
           <div class="ds-approve__h">Inconsistent region spelling</div>
           <div class="ds-approve__d">EMEA appears as: {", ".join(f"<code>{repr(s)}</code>" for s in spell)}.

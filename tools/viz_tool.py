@@ -25,10 +25,12 @@ DB = os.path.join(HERE, "..", "data", "flowdash.db")
 OUT = os.path.join(HERE, "..", "reports")
 os.makedirs(OUT, exist_ok=True)
 
-# palette mirrored from assets/theme.css
-BG, SURF, GRID = "#0f1115", "#171a21", "#2a313d"
-TEXT, DIM = "#e8ecf3", "#9aa6b8"
-ACCENT, GOOD, WARN, BAD = "#6ea8fe", "#4ade80", "#fbbf24", "#f87171"
+# palette mirrored from the Jetski design system (jetski-design/globals.css)
+BG, SURF, GRID = "#111418", "#191c20", "#44474e"
+TEXT, DIM = "#e2e2e9", "#c4c6d0"
+ACCENT, GOOD, WARN = "#a8c7fa", "#8ed8a9", "#dbc66e"   # blue / green / amber(warning)
+BAD = "#ff8a65"                                         # coral — erosion/negative only
+NEUTRAL = "#bfc6dc"                                     # blue-grey — non-cause series
 REGION_CLEAN = ("CASE WHEN REPLACE(UPPER(TRIM(region)),'.','')='EMEA' THEN 'EMEA' "
                 "ELSE TRIM(region) END")
 CLEAN = "duration_sec > 0"
@@ -82,14 +84,15 @@ def chart_driver():
     cells = res["evidence"]
     labels = [e["cell"] for e in cells]
     vals = [e["change_pct"] for e in cells]
-    colors = [BAD if e["is_cause"] else DIM for e in cells]
+    colors = [BAD if e["is_cause"] else NEUTRAL for e in cells]
     fig, ax = plt.subplots(figsize=(7, 3.8))
     _style(ax, fig)
     ax.barh(labels, vals, color=colors)
     ax.axvline(res["overall"]["change_pct"], color=WARN, ls="--", lw=1.4,
                label=f"overall {res['overall']['change_pct']}%")
-    ax.set_title("WAU change by platform × user_type (wk1→wk8)", fontsize=12, loc="left")
-    ax.set_xlabel("% change"); ax.invert_yaxis()
+    ax.set_title("WAU change by platform × user_type (wk1→wk8)",
+                 fontsize=12, loc="left", pad=12)
+    ax.set_xlabel("% change"); ax.invert_yaxis(); ax.margins(y=0.12)
     ax.legend(facecolor=SURF, edgecolor=GRID, labelcolor=TEXT, fontsize=9)
     return save(fig, "driver_cells.png")
 
