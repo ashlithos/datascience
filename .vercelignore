@@ -2,8 +2,11 @@ data/
 tools/
 .claude/
 reports/
+server/
 __pycache__/
 **/__pycache__/
 *.db
 *.pyc
+web/build_web.py
+web/render.py
 web/_preview_*.png
