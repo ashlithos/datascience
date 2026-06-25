@@ -1,0 +1,15 @@
+# FlowDash DS-agent — Python dependencies
+#
+# Core (data + tools + charts + static/live-rule UIs):
+matplotlib>=3.8
+pandas>=2.0
+
+# Real agent loop (server/agent.py). Optional: if absent, the live server
+# automatically falls back to the deterministic rule router.
+#   The SDK drives the `claude` CLI, so you also need it installed + authenticated:
+#     npm i -g @anthropic-ai/claude-code   (then `claude` once to log in)
+#   OR set ANTHROPIC_API_KEY in the environment.
+claude-agent-sdk>=0.2
+
+# Optional, only for screenshotting the HTML cards:
+# playwright>=1.40

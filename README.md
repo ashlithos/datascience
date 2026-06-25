@@ -5,9 +5,11 @@ value across the five stages of a data-science workflow — **cleaning → key-d
 storytelling → alert → orchestration** — driven entirely by **plain-English
 conversation** for a non-technical user (our fictional PM, **Maya**).
 
-It is built to be run **inside Claude Code**: the "agent" is Claude Code itself,
-orchestrated by [`CLAUDE.md`](CLAUDE.md), calling **skills** that call **tools** that
-query a single SQLite file. Mock UI "components" are rendered as self-contained HTML
+It runs as a **real agent** two ways: (1) inside Claude Code, orchestrated by
+[`CLAUDE.md`](CLAUDE.md); and (2) as a standalone **Claude Agent SDK** loop
+([`server/agent.py`](server/agent.py)) behind a web UI — an LLM that reads the skills,
+decides which tools to call, runs real SQL, and streams its reasoning so you can review
+it. Both call the same **skills → tools → SQLite** stack. UI "components" are Material 3
 cards with embedded charts.
 
 > **Design note.** The visual language is the **Jetski** design system (Material 3
@@ -43,41 +45,47 @@ CLAUDE.md               the orchestration / dispatch layer
 exploration-log.md      the UX exploration findings (a deliverable)
 ```
 
-## The UI — two ways to see it
+## The UI — a real agent you can review
 
-The conversation *is* the primary interface (the agent is Claude Code driven by
-`CLAUDE.md`). On top of that there are two visual front-ends, both reproducing the
-Jetski **chat + canvas** layout (Material 3 dark, blue/cyan):
+The live app (`server/app.py`) reproduces the Jetski **chat + canvas** layout
+(Material 3 dark) and runs in two engines, switchable in the header:
 
-### 1. Live backend (real queries) — `server/app.py`
-A real, typeable chat wired to the database. Type a question (or paste a `SELECT…`);
-the backend routes intent to the actual tools, runs **real SQL against the real
-SQLite**, and mounts the result/card/chart in the canvas. Cleaning **approval buttons
-are functional** (Approve/Skip flips each issue to an "Applied" state, non-destructive).
-
-```bash
-python data/build_db.py && python tools/viz_tool.py all   # data + charts (once)
-python server/app.py                                       # → http://localhost:8000
-#   PORT=9000 python server/app.py    to change port
-```
-Pure standard-library Python — no Flask, no pip installs. Intent routing is rule-based
-by default; if `ANTHROPIC_API_KEY` is set, the NL→SQL hook (`web/render.py`) can upgrade
-`/api/ask` to true text-to-SQL.
-
-### 2. Static scripted preview (no server) — `web/index.html`
-One self-contained file (charts inlined), zero setup. Maya clicks a question → the
-agent plays a reasoning trace → answers → mounts the card. Good for a hosted link.
+### Agent mode — a REAL agentic loop (default)
+`server/agent.py` runs a genuine LLM agent via the **Claude Agent SDK**. It reads the
+project's **skills** (`.claude/skills/*`) and `data_dictionary.md`, **decides which
+tools to call**, runs **real SQL** against the real SQLite, and **streams its
+thinking + tool calls + answer** to the UI over Server-Sent Events — so you can review
+exactly how it reasoned. The data-science toolbelt (`run_sql`, `key_driver_analysis`,
+`feature_adoption`, `error_scan`, `wau_trend`, `detect_data_issues`, `storytelling`) is
+exposed as in-process SDK tools that also render the Material 3 cards. It's read-only
+(no Bash/Write); cleaning **writes stay gated** behind the UI's approval buttons.
 
 ```bash
-python web/build_web.py        # regenerate web/index.html
-# open web/index.html directly, or:  python -m http.server -d web 8000
+pip install -r requirements.txt        # matplotlib, pandas, claude-agent-sdk
+python data/build_db.py && python tools/viz_tool.py all
+python server/app.py                    # → http://localhost:8000
+#   AGENT_MODEL=claude-sonnet-4-6 python server/app.py   # faster model
 ```
+**Auth:** the SDK drives the `claude` CLI, so install it (`npm i -g
+@anthropic-ai/claude-code`, then run `claude` once to log in) **or** set
+`ANTHROPIC_API_KEY`. If the SDK/auth isn't present, the server logs it and silently
+falls back to Fast mode — the app still works.
 
-**Hosted link:** connect this repo to Vercel (Add New → Project → import
-`ashlithos/datascience`). `vercel.json` + `.vercelignore` serve `web/index.html` at the
-root, so every push/PR gets a preview URL. (The build sandbox can't reach Vercel —
-network is scoped to the repo — so trigger the deploy from your side via the git
-integration or `npx vercel deploy`. The live backend needs a host that runs Python.)
+### Fast mode — deterministic rule router
+A zero-LLM intent router (`web/render.py`) that maps the question to a real query and
+renders the same cards instantly. Pure standard library. Good for offline/snappy demos;
+also the automatic fallback. Cleaning **approval buttons are functional** in both modes.
+
+### Static scripted preview (no server) — `web/index.html`
+One self-contained file (charts inlined), zero setup — Maya clicks a question → scripted
+reasoning trace → card. This is what gets the **hosted link**: connect the repo to Vercel
+(Add New → Project → import `ashlithos/datascience`); `vercel.json` + `.vercelignore`
+serve it at the root, so every push/PR gets a preview URL. (The agent backend needs a
+host that runs Python + has SDK auth; the static page is pure front-end.)
+
+```bash
+python web/build_web.py        # regenerate; then open web/index.html
+```
 
 ## Setup
 ```bash
