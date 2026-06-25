@@ -1,0 +1,7 @@
+# python
+__pycache__/
+*.pyc
+.venv/
+
+# local preview/scratch artifacts (regenerate via tools/)
+reports/_preview_*.png

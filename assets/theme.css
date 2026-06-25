@@ -1,0 +1,124 @@
+/* ===========================================================================
+   FlowDash DS-Agent — design tokens (the ONLY place visual style lives)
+   ---------------------------------------------------------------------------
+   This is a clean, self-contained visual language. It is deliberately isolated
+   so that "reskin to match the Jetski demo" is a one-file change: replace the
+   token values below and every mock component re-themes automatically.
+   Components reference var(--ds-*) tokens only — no hard-coded colors.
+   =========================================================================== */
+:root {
+  /* surfaces */
+  --ds-bg:        #0f1115;
+  --ds-surface:   #171a21;
+  --ds-surface-2: #1f242e;
+  --ds-border:    #2a313d;
+
+  /* text */
+  --ds-text:      #e8ecf3;
+  --ds-text-dim:  #9aa6b8;
+  --ds-text-mute: #6b7686;
+
+  /* brand / accent */
+  --ds-accent:      #6ea8fe;
+  --ds-accent-soft: rgba(110,168,254,0.12);
+
+  /* semantic */
+  --ds-good:    #4ade80;
+  --ds-good-bg: rgba(74,222,128,0.10);
+  --ds-warn:    #fbbf24;
+  --ds-warn-bg: rgba(251,191,36,0.10);
+  --ds-bad:     #f87171;
+  --ds-bad-bg:  rgba(248,113,113,0.10);
+
+  /* shape & type */
+  --ds-radius:   14px;
+  --ds-radius-sm: 9px;
+  --ds-pad:      18px;
+  --ds-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  --ds-mono: "SF Mono", "JetBrains Mono", Menlo, monospace;
+  --ds-shadow: 0 6px 24px rgba(0,0,0,0.35);
+}
+
+* { box-sizing: border-box; }
+body.ds-root {
+  margin: 0; padding: 24px; background: var(--ds-bg);
+  color: var(--ds-text); font-family: var(--ds-font); line-height: 1.5;
+}
+
+/* ---- card -------------------------------------------------------------- */
+.ds-card {
+  background: var(--ds-surface); border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius); padding: var(--ds-pad);
+  box-shadow: var(--ds-shadow); max-width: 720px;
+}
+.ds-card + .ds-card { margin-top: 16px; }
+.ds-card__kicker {
+  font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--ds-text-mute); font-weight: 600; margin-bottom: 6px;
+  display: flex; align-items: center; gap: 8px;
+}
+.ds-card__title { font-size: 19px; font-weight: 650; margin: 0 0 4px; }
+.ds-card__sub   { color: var(--ds-text-dim); font-size: 13px; margin: 0 0 14px; }
+
+/* ---- pills / badges ---------------------------------------------------- */
+.ds-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  background: var(--ds-surface-2); color: var(--ds-text-dim);
+}
+.ds-pill--good { background: var(--ds-good-bg); color: var(--ds-good); }
+.ds-pill--warn { background: var(--ds-warn-bg); color: var(--ds-warn); }
+.ds-pill--bad  { background: var(--ds-bad-bg);  color: var(--ds-bad);  }
+
+/* ---- metric row -------------------------------------------------------- */
+.ds-metrics { display: flex; gap: 22px; flex-wrap: wrap; margin: 6px 0 14px; }
+.ds-metric__val { font-size: 26px; font-weight: 700; letter-spacing: -.01em; }
+.ds-metric__lbl { font-size: 12px; color: var(--ds-text-mute); }
+.ds-metric--bad  .ds-metric__val { color: var(--ds-bad); }
+.ds-metric--good .ds-metric__val { color: var(--ds-good); }
+
+/* ---- confidence meter -------------------------------------------------- */
+.ds-conf { margin: 10px 0 4px; }
+.ds-conf__track { height: 7px; border-radius: 999px; background: var(--ds-surface-2); overflow: hidden; }
+.ds-conf__fill  { height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--ds-accent), var(--ds-good)); }
+.ds-conf__label { font-size: 12px; color: var(--ds-text-dim); margin-top: 6px; }
+
+/* ---- evidence (collapsible takeover point) ----------------------------- */
+.ds-evidence { margin-top: 14px; border-top: 1px solid var(--ds-border); padding-top: 12px; }
+.ds-evidence > summary {
+  cursor: pointer; list-style: none; font-size: 13px; font-weight: 600;
+  color: var(--ds-accent); display: flex; align-items: center; gap: 6px;
+}
+.ds-evidence > summary::-webkit-details-marker { display: none; }
+.ds-evidence[open] > summary { margin-bottom: 12px; }
+.ds-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.ds-table th, .ds-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--ds-border); }
+.ds-table th { color: var(--ds-text-mute); font-weight: 600; }
+.ds-table td.num, .ds-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.ds-table tr.is-cause td { background: var(--ds-bad-bg); }
+.ds-code { font-family: var(--ds-mono); font-size: 12px; background: var(--ds-bg);
+  border: 1px solid var(--ds-border); border-radius: var(--ds-radius-sm);
+  padding: 10px 12px; color: var(--ds-text-dim); white-space: pre-wrap; overflow-x: auto; }
+
+/* ---- approval rows (cleaning stage) ------------------------------------ */
+.ds-approve { display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 0; border-bottom: 1px solid var(--ds-border); }
+.ds-approve:last-child { border-bottom: none; }
+.ds-approve__icon { font-size: 18px; line-height: 1.4; }
+.ds-approve__body { flex: 1; }
+.ds-approve__h { font-weight: 600; font-size: 14px; }
+.ds-approve__d { font-size: 12.5px; color: var(--ds-text-dim); margin-top: 2px; }
+.ds-btnrow { display: flex; gap: 8px; margin-top: 8px; }
+.ds-btn { font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: var(--ds-radius-sm);
+  border: 1px solid var(--ds-border); background: var(--ds-surface-2); color: var(--ds-text); cursor: pointer; }
+.ds-btn--primary { background: var(--ds-accent); border-color: var(--ds-accent); color: #06101f; }
+.ds-btn--ghost { background: transparent; }
+
+/* ---- alert banner (autonomous) ----------------------------------------- */
+.ds-alert { border-left: 4px solid var(--ds-bad); }
+.ds-alert .ds-card__kicker { color: var(--ds-bad); }
+
+/* ---- footnote ---------------------------------------------------------- */
+.ds-foot { font-size: 11.5px; color: var(--ds-text-mute); margin-top: 12px; }
+.ds-chart { width: 100%; border-radius: var(--ds-radius-sm); margin-top: 12px; display: block; }
