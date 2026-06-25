@@ -40,3 +40,5 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
+
+# (trigger: redeploy after Pages was enabled)
