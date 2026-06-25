@@ -1,0 +1,9 @@
+data/
+tools/
+.claude/
+reports/
+__pycache__/
+**/__pycache__/
+*.db
+*.pyc
+web/_preview_*.png

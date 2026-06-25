@@ -43,6 +43,27 @@ CLAUDE.md               the orchestration / dispatch layer
 exploration-log.md      the UX exploration findings (a deliverable)
 ```
 
+## Interactive preview (the UI)
+
+The conversation *is* the primary interface (the agent is Claude Code driven by
+`CLAUDE.md`). For a **clickable visual preview** of that experience, `web/index.html`
+is a self-contained interactive app reproducing the Jetski **chat + canvas** layout:
+Maya clicks a question → the agent plays a reasoning trace → answers → mounts the
+matching card/chart in the canvas pane. It's one static file (charts inlined), no
+build step, no server.
+
+```bash
+python tools/viz_tool.py all && python web/build_web.py   # regenerate web/index.html
+# then just open web/index.html in a browser — or:
+python -m http.server -d web 8000                          # http://localhost:8000
+```
+
+**Get a hosted link:** connect this repo to Vercel (Add New → Project → import
+`ashlithos/datascience`). `vercel.json` + `.vercelignore` are already configured to
+serve `web/index.html` at the root, so every push/PR gets a preview URL. (The build
+sandbox itself can't reach Vercel — network is scoped to the repo — so the deploy is
+triggered from your side via the git integration or `npx vercel deploy`.)
+
 ## Setup
 ```bash
 pip install matplotlib pandas      # plotting + data

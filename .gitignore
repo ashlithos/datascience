@@ -5,3 +5,4 @@ __pycache__/
 
 # local preview/scratch artifacts (regenerate via tools/)
 reports/_preview_*.png
+web/_preview_*.png
