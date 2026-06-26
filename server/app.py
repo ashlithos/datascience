@@ -75,7 +75,7 @@ def page():
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono&display=swap" rel="stylesheet">
 <style>{render.CSS}{EXTRA_CSS}</style></head><body data-mode="{default_mode}" data-agent="{int(AGENT_OK)}">
 <header><div class="logo">F</div><div class="name">FlowDash</div>
-  <span style="font-size:13px;color:var(--on-surface-variant)">· data-science agent</span>
+  <span class="hdr-sub" style="font-size:13px;color:var(--on-surface-variant)">· data-science agent</span>
   {badge}
   <div class="modesw" id="modesw">
     <button data-m="agent" class="{'on' if default_mode=='agent' else ''}" {'disabled' if not AGENT_OK else ''}>Agent</button>

@@ -430,4 +430,22 @@ header .live::before{content:"";width:7px;height:7px;border-radius:50%;backgroun
 .tabs{display:flex;gap:8px;margin-bottom:14px}
 .tab{font-size:13px;font-weight:500;padding:7px 14px;border-radius:999px;border:1px solid var(--outline-variant);background:transparent;color:var(--on-surface-variant);cursor:pointer}
 .tab-on{background:var(--secondary-container);border-color:transparent;color:var(--on-secondary-container)}
+
+/* ---- responsive: collapse the chat|canvas split below 860px ---- */
+@media (max-width:860px){
+  .wrap{flex-direction:column;height:auto}
+  .chat,.chat.has-canvas{max-width:100%;height:auto;border-right:none}
+  .chat:not(.has-canvas){min-height:calc(100vh - 56px)}
+  .thread{max-width:100%;overflow:visible;flex:none}
+  .canvas{flex:none;border-top:1px solid var(--outline-variant)}
+  header{flex-wrap:wrap;gap:8px 10px;padding:12px 16px}
+  .hdr-sub{display:none}
+}
+@media (max-width:520px){
+  .thread{padding:18px 14px 6px}
+  .canvas{padding:18px 14px 44px}
+  .metrics{gap:14px}
+  .ctitle{font-size:18px}
+  .modesw{margin-left:auto}
+}
 """
