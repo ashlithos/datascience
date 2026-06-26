@@ -27,7 +27,19 @@ REPORTS = os.path.join(ROOT, "reports")
 DB = os.path.join(ROOT, "data", "flowdash.db")
 
 import sql_tool          # noqa: E402  (read-only SQL runner with its own guards)
+import profiler          # noqa: E402  (generic, dataset-agnostic data profiler)
 from key_driver import scan  # noqa: E402
+
+# ---- bring-your-own-data store (shared by the server endpoints AND the in-process
+# agent tools, which run in the same process). Holds the uploaded DataFrame, its
+# profile, and the per-issue approve/skip state. ------------------------------- #
+UPLOAD = {"name": None, "df": None, "issues": [], "state": {}}
+
+
+def set_upload(name, df):
+    prof = profiler.profile(df)
+    UPLOAD.update(name=name, df=df, issues=prof["issues"], state={})
+    return prof
 
 REGION_CLEAN = ("CASE WHEN REPLACE(UPPER(TRIM(region)),'.','')='EMEA' THEN 'EMEA' "
                 "ELSE TRIM(region) END")
@@ -247,6 +259,61 @@ def canvas_help():
 
 
 # --------------------------------------------------------------------------- #
+#  bring-your-own-data: generic profile canvas + apply                         #
+# --------------------------------------------------------------------------- #
+_SEV = {"high": ("&#9650;", "var(--error)"), "medium": ("&#9670;", "var(--tertiary)"),
+        "low": ("&#8226;", "var(--on-surface-variant)")}
+
+
+def canvas_profile():
+    u = UPLOAD
+    if u["df"] is None:
+        return ('<span class="kicker">Data cleaning · your data</span>'
+                '<h3 class="ctitle">No dataset uploaded yet</h3>'
+                '<p class="csub">Use the upload button (↑ file) to drop a CSV / TSV / JSON / Excel '
+                'file, and I\'ll profile it for data-quality issues.</p>')
+    rows = ""
+    for it in u["issues"]:
+        st = u["state"].get(it["id"])
+        icon, color = _SEV.get(it["severity"], ("&#8226;", "var(--on-surface-variant)"))
+        if st == "approved":
+            rows += (f'<div class="approve"><div class="aicon" style="background:var(--good-container);color:var(--good)">&#10003;</div>'
+                     f'<div><div class="ah">{it["title"]}</div><div class="ad">Fix applied (in the cleaned copy).</div></div></div>')
+        elif st == "skipped":
+            rows += (f'<div class="approve"><div class="aicon">{icon}</div>'
+                     f'<div><div class="ah" style="color:var(--outline)">{it["title"]}</div>'
+                     f'<div class="ad">Skipped &middot; left as-is.</div></div></div>')
+        else:
+            sample = (f'<div class="ad" style="font-family:var(--mono);font-size:11.5px">e.g. '
+                      + ", ".join(s for s in it["sample"]) + "</div>") if it["sample"] else ""
+            rows += (f'<div class="approve"><div class="aicon" style="color:{color}">{icon}</div>'
+                     f'<div><div class="ah">{it["title"]}</div><div class="ad">{it["detail"]}</div>{sample}'
+                     f'<div class="btnrow">'
+                     f'<button class="btn btn-primary" data-act="profile" data-id="{it["id"]}" data-choice="approve">{it["fix_label"]}</button>'
+                     f'<button class="btn btn-ghost" data-act="profile" data-id="{it["id"]}" data-choice="skip">Skip</button>'
+                     f'</div></div></div>')
+    n_appr = sum(1 for v in u["state"].values() if v == "approved")
+    dl = (f'<div class="btnrow" style="margin-top:14px"><button class="btn btn-primary" data-act="download">'
+          f'&#8595; Download cleaned CSV ({n_appr} fix{"es" if n_appr != 1 else ""} applied)</button></div>') if n_appr else ""
+    return f"""
+    <span class="kicker">Data cleaning · your data</span>
+    <h3 class="ctitle">{u["name"]} — {len(u["issues"])} issue(s) found</h3>
+    <p class="csub">Profiled {len(u["df"])} rows × {u["df"].shape[1]} columns. Detection is read-only;
+    nothing is written until you approve — your call, per issue.</p>
+    {rows}
+    {dl}
+    <p class="foot">Generic profiler: duplicates, nulls, whitespace, inconsistent labels, numeric-as-text,
+    bad negatives, outliers, constant columns. Works on any CSV/TSV/JSON/Excel.</p>"""
+
+
+def apply_approved():
+    """Apply the approved fixes to a clean copy of the uploaded df; return (df, log)."""
+    u = UPLOAD
+    approved = [it for it in u["issues"] if u["state"].get(it["id"]) == "approved"]
+    return profiler.apply_fixes(u["df"], approved)
+
+
+# --------------------------------------------------------------------------- #
 #  intent router (the "agent" brain for the live backend)                      #
 # --------------------------------------------------------------------------- #
 def _has(text, *words):
@@ -269,11 +336,17 @@ def route(question, state=None):
                 "canvas": canvas}
 
     # cleaning
-    if _has(ql, "clean", "quality", "trust", "dirty", "duplicat", "dedup", "valid"):
+    if _has(ql, "clean", "quality", "trust", "dirty", "duplicat", "dedup", "valid", "profile"):
+        if UPLOAD["df"] is not None:
+            n = len(UPLOAD["issues"])
+            return {"skill": "data-cleaning",
+                    "calls": [f"profiler · scan {UPLOAD['name']}", "render · approval panel"],
+                    "answer": f"I profiled <b>{UPLOAD['name']}</b> ({len(UPLOAD['df'])} rows) and found <b>{n}</b> data-quality issue(s) — duplicates, nulls, inconsistent labels, and more. Approve each fix on the right; I won't change anything until you do, and you can download the cleaned copy.",
+                    "canvas": canvas_profile()}
         return {"skill": "data-cleaning",
                 "calls": ["sql_tool · detect duplicates", "sql_tool · detect negatives",
                           "sql_tool · DISTINCT region", "components · cleaning panel"],
-                "answer": "Not quite yet — but the issues are small and fixable. I found <b>three</b>: 35 duplicate rows, 28 negative durations, and EMEA spelled four ways. Approve each on the right; I won't write anything until you do.",
+                "answer": "Not quite yet — but the issues are small and fixable. I found <b>three</b>: 35 duplicate rows, 28 negative durations, and EMEA spelled four ways. Approve each on the right; I won't write anything until you do. <i>(Tip: upload your own CSV with the file button to clean any dataset.)</i>",
                 "canvas": canvas_cleaning(state.get("clean"))}
 
     # key driver — "why ... down/drop", "cause", "driver"

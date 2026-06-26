@@ -156,8 +156,27 @@ async def storytelling(args):
                 "same facts: WAU -18%, android x new -61%, sql_export ~3x, EMEA wk6 errors ~7%.")
 
 
+@tool("profile_data", "Profile the user's UPLOADED dataset (any CSV/TSV/JSON/Excel) for "
+      "data-quality issues — duplicates, nulls, whitespace, inconsistent labels, "
+      "numeric-as-text, bad negatives, outliers, constant columns — and render the "
+      "approval panel. Use this for 'is my data clean' when a file has been uploaded; "
+      "detection only, writes stay gated behind the panel's buttons.",
+      {})
+async def profile_data(args):
+    u = render.UPLOAD
+    if u["df"] is None:
+        return _txt("No dataset uploaded yet — ask the user to upload a CSV with the file button.")
+    _emit_artifact(render.canvas_profile())
+    lines = [f"Profiled {u['name']}: {len(u['df'])} rows × {u['df'].shape[1]} columns. "
+             f"Found {len(u['issues'])} issue(s):"]
+    for it in u["issues"]:
+        lines.append(f"  [{it['severity']}] {it['title']}")
+    lines.append("Proposed fixes shown for approval; nothing is written until the user approves.")
+    return _txt("\n".join(lines))
+
+
 DS_TOOLS = [run_sql, key_driver_analysis, feature_adoption, error_scan,
-            wau_trend, detect_data_issues, storytelling]
+            wau_trend, detect_data_issues, storytelling, profile_data]
 TOOL_NAMES = ["mcp__ds__" + t.name for t in DS_TOOLS]
 
 
@@ -175,6 +194,8 @@ Rules:
   evidence — tell Maya she can open the evidence on the right.
 - Detection is free (read-only); WRITING/changing data needs Maya's approval. Never
   claim you changed data — propose, and let her approve via the panel.
+- If the user has UPLOADED their own dataset, use `profile_data` for cleaning/quality
+  questions (it works on any CSV); otherwise the FlowDash tools above apply.
 - Be concise: 2-5 sentences. The rich card on the right carries the detail.
 - Consult data_dictionary.md (via Read) if you're unsure about a field; it documents
   traps like duration_sec vs active_sec, user_type vs plan, export_csv vs sql_export.

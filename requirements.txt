@@ -1,8 +1,9 @@
 # FlowDash DS-agent — Python dependencies
 #
-# Core (data + tools + charts + static/live-rule UIs):
+# Core (data + tools + charts + the generic profiler + static/live-rule UIs):
 matplotlib>=3.8
 pandas>=2.0
+# openpyxl>=3.1   # optional — only needed to profile .xlsx uploads
 
 # Real agent loop (server/agent.py). Optional: if absent, the live server
 # automatically falls back to the deterministic rule router.

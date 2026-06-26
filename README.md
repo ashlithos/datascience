@@ -76,6 +76,20 @@ A zero-LLM intent router (`web/render.py`) that maps the question to a real quer
 renders the same cards instantly. Pure standard library. Good for offline/snappy demos;
 also the automatic fallback. Cleaning **approval buttons are functional** in both modes.
 
+### Bring your own data (clean any dataset)
+Beyond the FlowDash demo, the live app cleans **arbitrary datasets**. Click the **↑file**
+button to drop a CSV / TSV / JSON / Excel file. A generic pandas profiler
+([`tools/profiler.py`](tools/profiler.py)) scans for duplicates, nulls, whitespace,
+inconsistent labels, numbers-stored-as-text, bad negatives, outliers, and constant columns
+— each with a sample and a proposed fix. Approve per issue (non-destructive), then download
+the cleaned CSV. The real agent reaches this via its `profile_data` tool, so "is my data
+clean?" works on *your* file, not just FlowDash. Also usable standalone:
+
+```bash
+python tools/profiler.py data.csv               # human summary of issues
+python tools/profiler.py --clean all data.csv   # writes data.cleaned.csv
+```
+
 ### Static scripted preview (no server) — `web/index.html`
 One self-contained file (charts inlined), zero setup — Maya clicks a question → scripted
 reasoning trace → card. This is what gets the **hosted link**: connect the repo to Vercel

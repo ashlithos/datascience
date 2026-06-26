@@ -91,7 +91,9 @@ def page():
     <div class="composer">
       <div class="chips" id="chips">{chips}</div>
       <form class="form" id="form" autocomplete="off">
-        <input id="input" placeholder="Ask about FlowDash, or paste a SELECT…">
+        <label class="upload" title="Upload a CSV / TSV / JSON to clean">↑file
+          <input type="file" id="file" accept=".csv,.tsv,.json,.xlsx" hidden></label>
+        <input id="input" placeholder="Ask about FlowDash, upload your own CSV, or paste a SELECT…">
         <button class="send" id="send" type="submit">↑</button>
       </form>
     </div>
@@ -107,6 +109,8 @@ EXTRA_CSS = """
 .modesw button.on{background:var(--primary);color:var(--on-primary)}
 .modesw button:disabled{opacity:.35;cursor:not-allowed}
 .trace .think{font-style:italic;color:var(--on-surface-variant);margin-top:6px;font-size:12px;font-family:var(--font);opacity:.92}
+.upload{flex:none;font-size:12px;font-weight:500;color:var(--primary);border:1px solid var(--outline-variant);border-radius:999px;padding:7px 12px;cursor:pointer;white-space:nowrap}
+.upload:hover{background:rgba(168,199,250,.08)}
 """
 
 JS = r"""
@@ -195,7 +199,30 @@ function wireCanvas(){
     const d=await r.json(); canvas.innerHTML=`<div class="fade-up">${d.canvas}</div>`;wireCanvas();
     if(d.note){thread.appendChild(el(`<div class="turn agent fade-up"><div class="avatar">F</div><div class="bubble"><div>${d.note}</div></div></div>`));scroll();}});
   canvas.querySelectorAll('[data-act="ask"]').forEach(b=>b.onclick=()=>ask(b.dataset.q));
+  canvas.querySelectorAll('[data-act="profile"]').forEach(b=>b.onclick=async()=>{
+    const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({kind:'profile',id:b.dataset.id,choice:b.dataset.choice})});
+    const d=await r.json(); canvas.innerHTML=`<div class="fade-up">${d.canvas}</div>`;wireCanvas();});
+  canvas.querySelectorAll('[data-act="download"]').forEach(b=>b.onclick=async()=>{
+    const r=await fetch('/api/download',{method:'POST'}); const blob=await r.blob();
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='cleaned.csv';a.click();});
 }
+// ---- bring-your-own-data upload ----
+document.getElementById('file').onchange=async e=>{
+  const f=e.target.files[0]; if(!f)return;
+  thread.appendChild(el(`<div class="turn user fade-up"><div class="bubble">📄 Uploaded ${f.name}</div></div>`));scroll();
+  const turn=agentTurn(); const calls=turn.querySelector('.calls');
+  calls.appendChild(el(`<div class="call"><span class="dot"></span><span>profiler · scanning ${f.name}</span></div>`));
+  const text=await f.text();
+  let d;
+  try{const r=await fetch('/api/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:f.name,content:text})});d=await r.json();}
+  catch(err){d={error:'upload failed'};}
+  calls.querySelectorAll('.dot').forEach(x=>{const s=document.createElement('span');s.className='ok';s.textContent='✓';x.replaceWith(s);});
+  finalizeTrace(turn,'data-cleaning',1);
+  if(d.error){turn.querySelector('.ans').innerHTML=`<span style="color:var(--error)">${esc(d.error)}</span>`;}
+  else{turn.querySelector('.ans').innerHTML=`I profiled <b>${esc(d.name)}</b> — ${d.rows} rows × ${d.cols} columns, <b>${d.issues}</b> data-quality issue(s). Review and approve fixes on the right, then download the cleaned copy.`;mount(d.canvas);}
+  scroll(); e.target.value='';
+};
 form.onsubmit=e=>{e.preventDefault();ask(input.value);};
 document.getElementById('chips').onclick=e=>{const b=e.target.closest('.chip');if(b)ask(b.dataset.q);};
 """
@@ -268,20 +295,64 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, json.dumps({"error": "not found"}))
 
     def do_POST(self):
+        # downloads return a file, not JSON — handle before the JSON body parse
+        if self.path == "/api/download":
+            return self._download()
         try:
             data = self._body()
         except Exception:
             return self._send(400, json.dumps({"error": "bad json"}))
         if self.path == "/api/ask":
             self._send(200, json.dumps(render.route(data.get("text", ""), STATE)))
+        elif self.path == "/api/upload":
+            self._upload(data)
         elif self.path == "/api/action":
             cid, choice = data.get("id"), data.get("choice")
-            if choice in ("approve", "skip"):
-                STATE["clean"][cid] = "approved" if choice == "approve" else "skipped"
-            note = CLEAN_NOTES.get((cid, choice), "")
-            self._send(200, json.dumps({"canvas": render.canvas_cleaning(STATE["clean"]), "note": note}))
+            kind = data.get("kind")          # "profile" for uploaded-data fixes
+            if kind == "profile":
+                if choice in ("approve", "skip"):
+                    render.UPLOAD["state"][cid] = "approved" if choice == "approve" else "skipped"
+                self._send(200, json.dumps({"canvas": render.canvas_profile(), "note": ""}))
+            else:
+                if choice in ("approve", "skip"):
+                    STATE["clean"][cid] = "approved" if choice == "approve" else "skipped"
+                note = CLEAN_NOTES.get((cid, choice), "")
+                self._send(200, json.dumps({"canvas": render.canvas_cleaning(STATE["clean"]), "note": note}))
         else:
             self._send(404, json.dumps({"error": "not found"}))
+
+    def _upload(self, data):
+        import io
+        import pandas as pd
+        name = (data.get("name") or "dataset.csv").strip()
+        content = data.get("content", "")
+        try:
+            ext = name.lower().rsplit(".", 1)[-1]
+            if ext == "json":
+                df = pd.read_json(io.StringIO(content))
+            elif ext in ("tsv", "tab"):
+                df = pd.read_csv(io.StringIO(content), sep="\t")
+            else:
+                df = pd.read_csv(io.StringIO(content))
+        except Exception as e:
+            return self._send(200, json.dumps({"error": f"Couldn't parse {name}: {e}"}))
+        prof = render.set_upload(name, df)
+        self._send(200, json.dumps({
+            "name": name, "rows": prof["rows"], "cols": prof["cols"],
+            "issues": len(prof["issues"]), "canvas": render.canvas_profile()}))
+
+    def _download(self):
+        if render.UPLOAD["df"] is None:
+            return self._send(404, json.dumps({"error": "no dataset"}))
+        clean, _log = render.apply_approved()
+        csv = clean.to_csv(index=False).encode()
+        base = render.UPLOAD["name"].rsplit(".", 1)[0]
+        self.send_response(200)
+        self.send_header("Content-Type", "text/csv")
+        self.send_header("Content-Disposition", f'attachment; filename="{base}.cleaned.csv"')
+        self.send_header("Content-Length", str(len(csv)))
+        self.end_headers()
+        self.wfile.write(csv)
 
 
 if __name__ == "__main__":
