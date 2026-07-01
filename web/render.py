@@ -284,14 +284,25 @@ def canvas_profile():
                      f'<div><div class="ah" style="color:var(--outline)">{it["title"]}</div>'
                      f'<div class="ad">Skipped &middot; left as-is.</div></div></div>')
         else:
-            sample = (f'<div class="ad" style="font-family:var(--mono);font-size:11.5px">e.g. '
-                      + ", ".join(s for s in it["sample"]) + "</div>") if it["sample"] else ""
+            # missingness diagnosis shown inline (decision-critical); structured = amber warning
+            miss = it.get("missingness")
+            warn = ""
+            if miss:
+                mc = "var(--tertiary)" if miss["pattern"] == "structured" else "var(--on-surface-variant)"
+                pre = "&#9888; " if miss["pattern"] == "structured" else ""
+                warn = f'<div class="ad" style="color:{mc}">{pre}{miss["note"]}</div>'
+            sample = (f'<div class="ds-code">e.g. ' + ", ".join(it["sample"]) + "</div>") if it["sample"] else ""
+            impact = it.get("impact", "")
+            evidence = (f'<details class="evidence"><summary>&#9656; show the evidence</summary>'
+                        f'<div class="foot">Detected: {it["detail"]}</div>{sample}'
+                        f'<div class="foot">If approved, this fix <b>{impact}</b>.</div></details>')
             rows += (f'<div class="approve"><div class="aicon" style="color:{color}">{icon}</div>'
-                     f'<div><div class="ah">{it["title"]}</div><div class="ad">{it["detail"]}</div>{sample}'
+                     f'<div><div class="ah">{it["title"]}</div><div class="ad">{it["detail"]}</div>{warn}'
                      f'<div class="btnrow">'
                      f'<button class="btn btn-primary" data-act="profile" data-id="{it["id"]}" data-choice="approve">{it["fix_label"]}</button>'
                      f'<button class="btn btn-ghost" data-act="profile" data-id="{it["id"]}" data-choice="skip">Skip</button>'
-                     f'</div></div></div>')
+                     f'<span class="pill" style="align-self:center">{impact}</span>'
+                     f'</div>{evidence}</div></div>')
     n_appr = sum(1 for v in u["state"].values() if v == "approved")
     dl = (f'<div class="btnrow" style="margin-top:14px"><button class="btn btn-primary" data-act="download">'
           f'&#8595; Download cleaned CSV ({n_appr} fix{"es" if n_appr != 1 else ""} applied)</button></div>') if n_appr else ""

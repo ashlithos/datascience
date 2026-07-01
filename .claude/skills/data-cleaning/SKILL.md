@@ -42,9 +42,22 @@ acting (writing/excluding/normalising) must be ratified.
    de-dupe on `session_id` (recipes are in `data_dictionary.md`). For the demo,
    "applying" means: use the clean recipe in all downstream queries and say so.
 
+## Missing values — diagnose *why* before you drop
+Never delete rows for missing values without checking whether the missingness is
+**random or structured**. Cross-tab the null mask against other columns: if the nulls
+concentrate in one category far beyond its baseline (e.g. *all* the null `user_id` are
+`purchase` events), the data is **not missing at random** and dropping those rows
+**biases the analysis**. Default to **flag-and-keep** (add a `<col>__missing` indicator),
+not delete. Only fill/drop when missingness looks diffuse *and* the count is small
+enough to judge. The generic profiler (`tools/profiler.py`) does this automatically and
+surfaces the evidence; honour the same rule for FlowDash SQL cleaning.
+
 ## UX intent to preserve
 - The **approval surface** is the star: show issues *by type*, with a representative
   sample, not a wall of rows.
+- **Every proposed fix ships with its evidence and its impact** — the rule that fired,
+  the flagged rows, and how many rows/cells the fix changes ("removes 13 rows"). Reuse
+  the key-driver "▸ show the evidence" disclosure so a skeptical user can audit.
 - Make the read-only/write boundary explicit in words ("I can spot these on my own;
   I won't change anything until you say so").
 - Never silently clean — the user must see what was wrong and what you'll do.

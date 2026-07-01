@@ -170,8 +170,13 @@ async def profile_data(args):
     lines = [f"Profiled {u['name']}: {len(u['df'])} rows × {u['df'].shape[1]} columns. "
              f"Found {len(u['issues'])} issue(s):"]
     for it in u["issues"]:
-        lines.append(f"  [{it['severity']}] {it['title']}")
-    lines.append("Proposed fixes shown for approval; nothing is written until the user approves.")
+        lines.append(f"  [{it['severity']}] {it['title']} → fix {it.get('impact','')}")
+        m = it.get("missingness")
+        if m and m.get("pattern") == "structured":
+            lines.append(f"      ⚠ {m['note']}")
+    lines.append("Proposed fixes shown for approval; nothing is written until the user approves. "
+                 "For structured (non-random) missingness I default to flag-and-keep, not delete — "
+                 "call that out to the user.")
     return _txt("\n".join(lines))
 
 

@@ -68,6 +68,53 @@ def _is_text(s):
                 or pd.api.types.is_datetime64_any_dtype(s))
 
 
+def _missingness_diagnosis(df, col):
+    """Is this column's missingness RANDOM or STRUCTURED? Cross-tab the null mask
+    against every other low-cardinality column; if the nulls concentrate in one
+    category far beyond its baseline prevalence, the missingness is not random and
+    dropping those rows would bias the data (the classic MNAR/MAR case, e.g. all the
+    null user_ids being purchase events). Returns a diagnosis dict or None."""
+    null_mask = df[col].isna()
+    n_null = int(null_mask.sum())
+    if n_null < 3:
+        return None
+    # Need enough missing values to tell structure from coincidence. Below this, a
+    # high "concentration" is likely small-sample noise — don't assert a pattern.
+    if n_null < 20:
+        return {"pattern": "too_few",
+                "note": (f"Only {n_null} missing — too few to reliably judge whether the "
+                         f"missingness is random. Inspect the rows before dropping.")}
+    best = None
+    for other in df.columns:
+        if str(other) == str(col):
+            continue
+        s = df[other]
+        nunq = s.nunique(dropna=True)
+        if nunq < 2 or nunq > 30:                 # need a categorical-ish column
+            continue
+        among = s[null_mask].value_counts(normalize=True, dropna=True)
+        if among.empty:
+            continue
+        top_val, share = among.index[0], float(among.iloc[0])
+        baseline = float((s == top_val).mean())    # prevalence of that value overall
+        obs = share * n_null                        # absolute count of nulls in that value
+        # structured only when the concentration is strong AND materially above chance
+        if share >= 0.7 and share > baseline + 0.25 and obs >= 15:
+            cand = {"other": str(other), "value": str(top_val),
+                    "share": round(share * 100, 1), "baseline": round(baseline * 100, 1)}
+            if best is None or cand["share"] > best["share"]:
+                best = cand
+    if best:
+        return {"pattern": "structured", **best,
+                "note": (f"{best['share']}% of the {n_null} missing values fall where "
+                         f"{best['other']} = “{best['value']}” — but that's only "
+                         f"{best['baseline']}% of all rows. Missingness is NOT random; "
+                         f"dropping these rows would bias the analysis. Recommend flag-and-keep.")}
+    return {"pattern": "diffuse", "note":
+            f"The {n_null} missing values are spread across the data with no strong "
+            f"concentration — likely safe to fill or drop, but confirm it matters for your metric."}
+
+
 # --------------------------------------------------------------------------- #
 #  profiling                                                                   #
 # --------------------------------------------------------------------------- #
@@ -92,18 +139,32 @@ def profile(df):
     for col in df.columns:
         s = df[col]
 
-        # 2. missing values
+        # 2. missing values — diagnose WHY before proposing a fix
         miss = int(s.isna().sum())
         if miss:
-            dtype_kind = "numeric" if pd.api.types.is_numeric_dtype(s) else "categorical"
-            strat = "median" if dtype_kind == "numeric" else "mode"
+            numeric = pd.api.types.is_numeric_dtype(s)
+            diag = _missingness_diagnosis(df, col)
+            structured = bool(diag and diag.get("pattern") == "structured")
+            if structured:
+                # never silently drop non-random missingness — keep the rows, flag them
+                fix = {"kind": "flag_missing"}
+                fix_label = "Flag & keep (don't drop — see why →)"
+                severity = "high"
+            elif miss / n < 0.05:
+                strat = "median" if numeric else "mode"
+                fix = {"kind": "fill_missing", "strategy": strat}
+                fix_label = f"Fill with column {strat}"
+                severity = "medium"
+            else:
+                fix = {"kind": "flag_missing"}
+                fix_label = "Flag & keep for now"
+                severity = "medium"
             issues.append({
                 "id": f"missing::{col}", "type": "missing_values", "column": col,
                 "title": f"{miss} missing values in “{col}” ({miss/n*100:.0f}%)",
-                "severity": "high" if miss / n > 0.2 else "medium", "count": miss,
-                "detail": f"Nulls in a {dtype_kind} column.",
-                "sample": [], "fix": {"kind": "fill_missing", "strategy": strat},
-                "fix_label": f"Fill with column {strat}" if miss / n < 0.5 else "Drop rows with this missing"})
+                "severity": severity, "count": miss,
+                "detail": f"Nulls in a {'numeric' if numeric else 'categorical'} column.",
+                "missingness": diag, "sample": [], "fix": fix, "fix_label": fix_label})
 
         if _is_text(s):
             non_null = s.dropna().astype(str)
@@ -190,6 +251,21 @@ def profile(df):
                 "sample": _samples([str(s.dropna().iloc[0])]) if s.notna().any() else [],
                 "fix": {"kind": "drop_column"}, "fix_label": "Drop the column"})
 
+    # attach a plain-language impact (what the fix does to the row/column count)
+    for it in issues:
+        k = it["fix"]["kind"]; c = it["count"]
+        it["impact"] = {
+            "drop_duplicate_rows": f"removes {c} rows",
+            "drop_negatives": f"removes {c} rows",
+            "flag_missing": f"keeps all rows, adds a “{it['column']}__missing” flag column",
+            "fill_missing": f"fills {c} cells in {it['column']} (rows unchanged)",
+            "strip_whitespace": f"trims {c} values (rows unchanged)",
+            "normalize_case": f"relabels {c} values (rows unchanged)",
+            "to_numeric": f"converts {it['column']} to a number (rows unchanged)",
+            "clip_outliers": f"clips {c} values (rows unchanged)",
+            "drop_column": f"drops the “{it['column']}” column",
+        }.get(k, "")
+
     sev_rank = {"high": 0, "medium": 1, "low": 2}
     issues.sort(key=lambda i: (sev_rank.get(i["severity"], 3), -i["count"]))
     return {"rows": n, "cols": len(df.columns), "columns": list(map(str, df.columns)),
@@ -230,6 +306,9 @@ def apply_fixes(df, issues):
                 out[col] = out[col].apply(
                     lambda v: canon.get(str(v).strip().lower(), v) if pd.notna(v) else v)
                 log.append(f"normalised labels in {col}")
+            elif kind == "flag_missing":
+                out[f"{col}__missing"] = out[col].isna()
+                log.append(f"flagged {int(out[col].isna().sum())} missing in {col} (kept rows)")
             elif kind == "to_numeric":
                 out[col] = pd.to_numeric(out[col].astype(str).str.replace(",", "", regex=False),
                                          errors="coerce")
@@ -251,9 +330,12 @@ def summarize(prof):
     lines = [f"Profiled {prof['rows']} rows × {prof['cols']} columns.",
              f"Found {len(prof['issues'])} data-quality issue(s):", ""]
     for i in prof["issues"]:
-        lines.append(f"  [{i['severity']:<6}] {i['title']}")
+        lines.append(f"  [{i['severity']:<6}] {i['title']}  →  {i.get('impact','')}")
         if i["sample"]:
             lines.append(f"            e.g. {', '.join(i['sample'])}")
+        m = i.get("missingness")
+        if m:
+            lines.append(f"            missingness: {m['note']}")
     if not prof["issues"]:
         lines.append("  (clean — nothing flagged)")
     return "\n".join(lines)
