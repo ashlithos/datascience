@@ -41,6 +41,19 @@ def set_upload(name, df):
     UPLOAD.update(name=name, df=df, issues=prof["issues"], state={})
     return prof
 
+
+# ---- Analysis Brief: the "mission alignment" step. 1-3 decision-changing
+# questions with proposed defaults, captured as an editable, pinned brief so the
+# user can correct the framing before (and after) the work happens. -------------- #
+BRIEF = {
+    "confirmed": False,
+    "metric": "Active user = a distinct user_id with a valid session (duration_sec > 0)",
+    "window": "Weekly, over the last 8 weeks",
+    "population": "Cleaned data; all platforms & regions",
+    "audience": "Product manager",
+}
+AUDIENCES = ["Executive", "Product manager", "Engineer"]
+
 REGION_CLEAN = ("CASE WHEN REPLACE(UPPER(TRIM(region)),'.','')='EMEA' THEN 'EMEA' "
                 "ELSE TRIM(region) END")
 CLEAN = "duration_sec > 0"
@@ -140,6 +153,7 @@ def canvas_driver(R=None):
     singles = "".join(f'<tr><td>{s["dim"]} = {s["value"]}</td><td class="num">{s["change_pct"]:+.0f}%</td></tr>'
                       for s in R["singles"][:5])
     return f"""
+    {brief_banner()}
     <span class="kicker">Key-driver analysis</span>
     <h3 class="ctitle">Why is weekly active down {abs(O['change_pct'])}%?</h3>
     <p class="csub">wk{O['first_week']} &rarr; wk{O['last_week']}: {O['wau_first']} &rarr; {O['wau_last']} active users.</p>
@@ -208,8 +222,34 @@ def canvas_alert():
     <p class="foot">Was this worth interrupting you for? The threshold is the etiquette of autonomy.</p>"""
 
 
+_STORY_B = {
+    "Executive": (
+        '<p class="m3head">One fixable segment is dragging the whole number.</p>'
+        '<p>Weekly active is down 18%, but it\'s <b>not</b> broad — it\'s new users on Android '
+        '(−61%); everything else is flat. Fix Android onboarding and the headline recovers. '
+        'Upside: <code>sql_export</code> adoption <b>tripled</b> — a growth surface worth funding.</p>'
+        '<p><b>The ask:</b> greenlight an Android new-user onboarding fix this quarter.</p>'),
+    "Product manager": (
+        '<p class="m3head">The thing nobody\'s looking at is going right.</p>'
+        '<p>Everyone\'s about to panic about the 18% WAU drop. First: <b><code>sql_export</code> '
+        'has tripled</b> (5%→15% of sessions), climbing every week with zero marketing.</p>'
+        '<img class="chart" src="' + CHARTS['feature'] + '" alt="sql_export trend">'
+        '<p>Now the drop — it\'s precise: new users on Android, −61%. Not all of Android, not all '
+        'new users. The intersection. ~92% sure. That\'s the onboarding funnel to fix.</p>'),
+    "Engineer": (
+        '<p class="m3head">WAU −18%; localized to one cross-tab cell.</p>'
+        '<p>Crossed platform×user_type over 55 combos. <code>android×new</code>: 1500→585 '
+        '(−61%); siblings flat (±5%). Confidence 92% = drop severity + 30% base share + sibling '
+        'flatness. EMEA wk-6 errors 7%, concentrated in the 2h after deploy <code>v2026.06.03</code>.</p>'
+        '<div class="ds-code">SELECT week, COUNT(DISTINCT user_id) wau FROM sessions\n'
+        'WHERE duration_sec>0 AND platform=\'android\' AND user_type=\'new\'\nGROUP BY week;</div>'),
+}
+
+
 def canvas_story():
+    aud = BRIEF["audience"] if BRIEF["audience"] in _STORY_B else "Product manager"
     return f"""
+    {brief_banner()}
     <span class="kicker">Storytelling · B / C comparison</span>
     <h3 class="ctitle">Weekly summary — two structures, same facts</h3>
     <div class="tabs"><button class="tab tab-on" data-tab="C">Version C · fixed</button><button class="tab" data-tab="B">Version B · agent-decided</button></div>
@@ -221,13 +261,11 @@ def canvas_story():
       <p><b>Recommendation.</b> Investigate Android new-user onboarding — the entire decline lives there.</p>
     </div>
     <div class="tabpane" data-pane="B" hidden>
-      <p class="csub">Agent-decided structure: it chose to <b>open on the good news</b>.</p>
-      <p class="m3head">The thing nobody's looking at is going right.</p>
-      <p>Everyone's about to panic about the 18% WAU drop. First: <b><code>sql_export</code> has tripled</b> (5%&rarr;15% of sessions), climbing every week with zero marketing.</p>
-      <img class="chart" src="{CHARTS['feature']}" alt="sql_export trend">
-      <p>Now the drop — it's precise: new users on Android, &minus;61%. Not all of Android, not all new users. The intersection. ~92% sure.</p>
+      <p class="csub">Agent-decided structure, tailored for: <b>{aud}</b> &nbsp; {_aud_chips(aud)}</p>
+      {_STORY_B[aud]}
     </div>
-    <p class="foot">C is predictable & audit-friendly; B noticed the surprise and restructured around it.</p>"""
+    <p class="foot">C is predictable & audit-friendly; B restructures around what matters — and
+    now re-tailors to the audience. Same facts, different framing.</p>"""
 
 
 def canvas_sql(sql):
@@ -256,6 +294,51 @@ def canvas_help():
       <li>"Write the weekly summary" <span style="color:var(--outline)">— storytelling (B vs C)</span></li>
       <li>"Show weekly active by region" <span style="color:var(--outline)">— or paste raw SQL</span></li>
     </ul>"""
+
+
+# --------------------------------------------------------------------------- #
+#  Analysis Brief (kickoff / mission alignment) + audience                     #
+# --------------------------------------------------------------------------- #
+def _aud_chips(active, view="story"):
+    return "".join(
+        f'<button class="tab {"tab-on" if a == active else ""}" data-act="audience" '
+        f'data-aud="{a}" data-view="{view}">{a}</button>'
+        for a in AUDIENCES)
+
+
+def canvas_brief():
+    b = BRIEF
+    field = lambda key, label, hint: (
+        f'<div style="margin:12px 0"><div class="ah">{label}</div>'
+        f'<div class="foot" style="margin:2px 0 6px">{hint}</div>'
+        f'<input class="brief-field" data-field="{key}" value="{b[key]}"></div>')
+    status = ('<span class="pill pill-good" style="margin-left:8px">confirmed</span>'
+              if b["confirmed"] else "")
+    return f"""
+    <span class="kicker">Analysis brief · mission alignment</span>
+    <h3 class="ctitle">Before I dig in — does this match what you're after?{status}</h3>
+    <p class="csub">I've proposed defaults for the three things that actually change the
+    analysis. Edit anything, then proceed — and you can revisit this any time.</p>
+    {field("metric", "1 · How is the metric defined?", "The #1 source of confident wrong answers. Default pulled from the data dictionary.")}
+    {field("window", "2 · Time grain & window?", "What period, at what granularity.")}
+    {field("population", "3 · Which population / filters?", "Who's in scope, and on cleaned data.")}
+    <div style="margin:12px 0"><div class="ah">Who is this for?</div>
+      <div class="foot" style="margin:2px 0 6px">Tailors the write-up (also switchable on the story).</div>
+      <div class="tabs">{_aud_chips(b["audience"], "brief")}</div></div>
+    <div class="btnrow" style="margin-top:14px">
+      <button class="btn btn-primary" data-act="brief-proceed">Looks right — proceed</button></div>
+    <p class="foot">Mission alignment: if the metric definition is wrong, everything downstream
+    is wrong. This is the cheapest place to catch it.</p>"""
+
+
+def brief_banner():
+    """Compact, non-blocking assumptions strip shown atop analysis cards."""
+    b = BRIEF
+    metric_short = b["metric"].split("=")[0].strip() if "=" in b["metric"] else b["metric"]
+    return (f'<div class="brief-banner">Using your brief: <b>{metric_short}</b> · {b["window"]} '
+            f'· for {b["audience"]} '
+            f'<button class="btn btn-ghost" style="padding:2px 8px;font-size:11px" '
+            f'data-act="ask" data-q="show the analysis brief">adjust &#9656;</button></div>')
 
 
 # --------------------------------------------------------------------------- #
@@ -345,6 +428,16 @@ def route(question, state=None):
         return {"skill": "sql_tool", "calls": [f"sql_tool · {q[:60]}…"],
                 "answer": f"Ran your query (read-only) — {n} row(s). Result on the right.",
                 "canvas": canvas}
+
+    # analysis brief / mission alignment
+    if _has(ql, "brief", "assumption", "mission", "kickoff", "prep data", "prep the data",
+            "new analysis", "set up analysis", "start an analysis", "objective", "align"):
+        return {"skill": "orchestration",
+                "calls": ["propose analysis brief · 3 decision-changing questions"],
+                "answer": "Before I dig in, here's the <b>analysis brief</b> — the three decisions "
+                          "that shape everything (metric definition, window, population), pre-filled "
+                          "with sensible defaults. Edit anything and proceed; you can revisit it any time.",
+                "canvas": canvas_brief()}
 
     # cleaning
     if _has(ql, "clean", "quality", "trust", "dirty", "duplicat", "dedup", "valid", "profile"):
@@ -514,6 +607,10 @@ header .live::before{content:"";width:7px;height:7px;border-radius:50%;backgroun
 .tabs{display:flex;gap:8px;margin-bottom:14px}
 .tab{font-size:13px;font-weight:500;padding:7px 14px;border-radius:999px;border:1px solid var(--outline-variant);background:transparent;color:var(--on-surface-variant);cursor:pointer}
 .tab-on{background:var(--secondary-container);border-color:transparent;color:var(--on-secondary-container)}
+.brief-field{width:100%;background:var(--sc-low);border:1px solid var(--outline-variant);border-radius:var(--r-sm);padding:9px 12px;color:var(--on-surface);font-size:13.5px;font-family:var(--font)}
+.brief-field:focus{outline:none;border-color:var(--primary)}
+.brief-banner{background:var(--sc-low);border:1px solid var(--outline-variant);border-radius:var(--r-sm);padding:8px 12px;margin-bottom:14px;font-size:12px;color:var(--on-surface-variant);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pill-good{background:var(--good-container);color:var(--good)}
 
 /* ---- responsive: collapse the chat|canvas split below 860px ---- */
 @media (max-width:860px){

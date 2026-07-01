@@ -46,6 +46,7 @@ PORT = int(os.environ.get("PORT", "8000"))
 STATE = {"clean": {}}
 
 QUICK = [
+    "Prep data for an analysis",
     "Is this data clean enough to trust?",
     "Why is weekly active down?",
     "How's sql_export doing?",
@@ -199,6 +200,16 @@ function wireCanvas(){
     const d=await r.json(); canvas.innerHTML=`<div class="fade-up">${d.canvas}</div>`;wireCanvas();
     if(d.note){thread.appendChild(el(`<div class="turn agent fade-up"><div class="avatar">F</div><div class="bubble"><div>${d.note}</div></div></div>`));scroll();}});
   canvas.querySelectorAll('[data-act="ask"]').forEach(b=>b.onclick=()=>ask(b.dataset.q));
+  const briefFields=()=>{const o={};canvas.querySelectorAll('.brief-field').forEach(f=>o[f.dataset.field]=f.value);return o;};
+  const postAction=async body=>{const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});return r.json();};
+  canvas.querySelectorAll('[data-act="audience"]').forEach(b=>b.onclick=async()=>{
+    const body={kind:'audience',aud:b.dataset.aud,view:b.dataset.view};
+    if(b.dataset.view==='brief')body.fields=briefFields();
+    const d=await postAction(body);canvas.innerHTML=`<div class="fade-up">${d.canvas}</div>`;wireCanvas();});
+  canvas.querySelectorAll('[data-act="brief-proceed"]').forEach(b=>b.onclick=async()=>{
+    const d=await postAction({kind:'brief-proceed',fields:briefFields()});
+    canvas.innerHTML=`<div class="fade-up">${d.canvas}</div>`;wireCanvas();
+    if(d.note){thread.appendChild(el(`<div class="turn agent fade-up"><div class="avatar">F</div><div class="bubble"><div>${d.note}</div></div></div>`));scroll();}});
   canvas.querySelectorAll('[data-act="profile"]').forEach(b=>b.onclick=async()=>{
     const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({kind:'profile',id:b.dataset.id,choice:b.dataset.choice})});
@@ -308,8 +319,23 @@ class Handler(BaseHTTPRequestHandler):
             self._upload(data)
         elif self.path == "/api/action":
             cid, choice = data.get("id"), data.get("choice")
-            kind = data.get("kind")          # "profile" for uploaded-data fixes
-            if kind == "profile":
+            kind = data.get("kind")          # "profile" / "audience" / "brief*"
+            if kind == "audience":
+                render.BRIEF["audience"] = data.get("aud", render.BRIEF["audience"])
+                view = data.get("view", "story")
+                canvas = render.canvas_brief() if view == "brief" else render.canvas_story()
+                self._send(200, json.dumps({"canvas": canvas, "note": ""}))
+            elif kind in ("brief", "brief-proceed"):
+                for k, v in (data.get("fields") or {}).items():
+                    if k in render.BRIEF and isinstance(v, str):
+                        render.BRIEF[k] = v
+                note = ""
+                if kind == "brief-proceed":
+                    render.BRIEF["confirmed"] = True
+                    note = ("Brief confirmed — I'll use this framing for the analysis. "
+                            "Ask “why is weekly active down?” or “write the summary” when ready.")
+                self._send(200, json.dumps({"canvas": render.canvas_brief(), "note": note}))
+            elif kind == "profile":
                 if choice in ("approve", "skip"):
                     render.UPLOAD["state"][cid] = "approved" if choice == "approve" else "skipped"
                 self._send(200, json.dumps({"canvas": render.canvas_profile(), "note": ""}))

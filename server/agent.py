@@ -180,8 +180,23 @@ async def profile_data(args):
     return _txt("\n".join(lines))
 
 
+@tool("analysis_brief", "Propose the ANALYSIS BRIEF at the start of a new analysis: the "
+      "1-3 decision-changing questions (metric definition, time window, population, audience) "
+      "with sensible defaults, as an editable card. Use for 'prep data for X' / 'start an "
+      "analysis' / mission-alignment. Proceed on the defaults but let the user correct them.",
+      {})
+async def analysis_brief(args):
+    _emit_artifact(render.canvas_brief())
+    b = render.BRIEF
+    return _txt("Proposed the analysis brief (editable): "
+                f"metric = {b['metric']}; window = {b['window']}; population = {b['population']}; "
+                f"audience = {b['audience']}. These three decisions shape everything downstream — "
+                "if the metric definition is wrong, the whole analysis is wrong. Ask the user to "
+                "confirm or edit, then proceed on the (possibly edited) defaults.")
+
+
 DS_TOOLS = [run_sql, key_driver_analysis, feature_adoption, error_scan,
-            wau_trend, detect_data_issues, storytelling, profile_data]
+            wau_trend, detect_data_issues, storytelling, profile_data, analysis_brief]
 TOOL_NAMES = ["mcp__ds__" + t.name for t in DS_TOOLS]
 
 
@@ -204,6 +219,12 @@ Rules:
 - Be concise: 2-5 sentences. The rich card on the right carries the detail.
 - Consult data_dictionary.md (via Read) if you're unsure about a field; it documents
   traps like duration_sec vs active_sec, user_type vs plan, export_csv vs sql_export.
+
+At the START of a new analysis (a "prep data for X" / "help me analyse" request), first
+propose an ANALYSIS BRIEF via analysis_brief — 1-3 decision-changing questions (metric
+definition, window, population, audience) with sensible defaults. Proceed on the defaults
+but make them editable; mission alignment up front prevents confident wrong answers. Don't
+interrogate — a few high-value questions, not a questionnaire.
 
 Default metric for "why is usage down" questions is Weekly Active Users (WAU)."""
 
