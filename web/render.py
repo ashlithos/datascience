@@ -42,6 +42,15 @@ def set_upload(name, df):
     return prof
 
 
+def load_hf(dataset_id, config=None, split="train", limit=5000):
+    """Pull an open Hugging Face dataset into the working store, then profile it —
+    same downstream path as an uploaded CSV. Returns (meta, prof)."""
+    import hf_tool
+    df, meta = hf_tool.load(dataset_id, config, split, limit)
+    prof = set_upload(f"hf:{dataset_id}", df)
+    return meta, prof
+
+
 # ---- Analysis Brief: the "mission alignment" step. 1-3 decision-changing
 # questions with proposed defaults, captured as an editable, pinned brief so the
 # user can correct the framing before (and after) the work happens. -------------- #
@@ -293,6 +302,7 @@ def canvas_help():
       <li>"Any error spikes?" / "Assume a week passed" <span style="color:var(--outline)">— alerts</span></li>
       <li>"Write the weekly summary" <span style="color:var(--outline)">— storytelling (B vs C)</span></li>
       <li>"Show weekly active by region" <span style="color:var(--outline)">— or paste raw SQL</span></li>
+      <li>"load imdb" / "load openai/gsm8k" <span style="color:var(--outline)">— pull an open Hugging Face dataset, then profile & clean it</span></li>
     </ul>"""
 
 
@@ -428,6 +438,33 @@ def route(question, state=None):
         return {"skill": "sql_tool", "calls": [f"sql_tool · {q[:60]}…"],
                 "answer": f"Ran your query (read-only) — {n} row(s). Result on the right.",
                 "canvas": canvas}
+
+    # load an open Hugging Face dataset by id
+    if _has(ql, "load ", "huggingface", "hugging face", "hf dataset", "hf:") and not ql.startswith("select"):
+        stop = {"load", "the", "a", "an", "huggingface", "hugging", "face", "hf", "dataset",
+                "from", "open", "please", "prep", "profile", "clean", "and", "then"}
+        cand = [w.strip(".,'\"") for w in q.split() if w.lower().strip(".,'\"") not in stop]
+        did = cand[0] if cand else None
+        if not did:
+            return {"skill": "hf", "calls": ["parse dataset id → none found"],
+                    "answer": "Tell me the dataset id, e.g. <code>load imdb</code> or "
+                              "<code>load openai/gsm8k</code>.", "canvas": canvas_help()}
+        try:
+            meta, prof = load_hf(did)
+            flat = (f" Flattened non-scalar columns: {', '.join(meta['flattened_columns'])}."
+                    if meta["flattened_columns"] else "")
+            return {"skill": "hf",
+                    "calls": [f"datasets.load_dataset('{did}', streaming, cap 5000)",
+                              "profiler · scan"],
+                    "answer": f"Loaded <b>{did}</b> — {meta['rows']} rows × {meta['cols']} columns"
+                              + (" (capped at 5000)" if meta["truncated"] else "") + f".{flat} "
+                              f"Found {len(prof['issues'])} data-quality issue(s) — review on the right.",
+                    "canvas": canvas_profile()}
+        except Exception as e:
+            return {"skill": "hf", "calls": [f"datasets.load_dataset('{did}') → error"],
+                    "answer": f"Couldn't load <b>{did}</b>: {e}. Check the id, or (if you're on a "
+                              "network that blocks huggingface.co) run it on your own machine.",
+                    "canvas": canvas_help()}
 
     # analysis brief / mission alignment
     if _has(ql, "brief", "assumption", "mission", "kickoff", "prep data", "prep the data",

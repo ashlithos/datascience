@@ -4,6 +4,7 @@
 matplotlib>=3.8
 pandas>=2.0
 # openpyxl>=3.1   # optional — only needed to profile .xlsx uploads
+# datasets>=2.0   # optional — only needed to load open Hugging Face datasets (tools/hf_tool.py)
 
 # Real agent loop (server/agent.py). Optional: if absent, the live server
 # automatically falls back to the deterministic rule router.

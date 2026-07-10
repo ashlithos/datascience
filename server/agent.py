@@ -180,6 +180,29 @@ async def profile_data(args):
     return _txt("\n".join(lines))
 
 
+@tool("load_hf_dataset", "Load an OPEN dataset from the Hugging Face Hub by id (e.g. "
+      "'imdb', 'tweet_eval' with config 'emotion', 'openai/gsm8k' with config 'main') into "
+      "the working store, then profile it for data-quality issues. Streams and caps rows so "
+      "big datasets stay cheap. Use when the user names a public/HF dataset to prep or explore.",
+      {"dataset_id": str, "config": str, "split": str, "limit": int})
+async def load_hf_dataset(args):
+    a = args or {}
+    did = a.get("dataset_id", "")
+    if not did:
+        return _txt("Need a dataset id, e.g. imdb or openai/gsm8k.")
+    try:
+        meta, prof = render.load_hf(did, a.get("config") or None,
+                                    a.get("split") or "train", int(a.get("limit") or 5000))
+    except Exception as e:
+        return _txt(f"Could not load {did}: {e}. Check the id or the Hub's reachability.")
+    _emit_artifact(render.canvas_profile())
+    flat = (" Flattened non-scalar columns: " + ", ".join(meta["flattened_columns"]) + "."
+            if meta["flattened_columns"] else "")
+    return _txt(f"Loaded {did}: {meta['rows']} rows × {meta['cols']} cols"
+                + (" (capped)" if meta["truncated"] else "") + f".{flat} "
+                f"Found {len(prof['issues'])} data-quality issue(s); approval panel rendered.")
+
+
 @tool("analysis_brief", "Propose the ANALYSIS BRIEF at the start of a new analysis: the "
       "1-3 decision-changing questions (metric definition, time window, population, audience) "
       "with sensible defaults, as an editable card. Use for 'prep data for X' / 'start an "
@@ -195,8 +218,8 @@ async def analysis_brief(args):
                 "confirm or edit, then proceed on the (possibly edited) defaults.")
 
 
-DS_TOOLS = [run_sql, key_driver_analysis, feature_adoption, error_scan,
-            wau_trend, detect_data_issues, storytelling, profile_data, analysis_brief]
+DS_TOOLS = [run_sql, key_driver_analysis, feature_adoption, error_scan, wau_trend,
+            detect_data_issues, storytelling, profile_data, analysis_brief, load_hf_dataset]
 TOOL_NAMES = ["mcp__ds__" + t.name for t in DS_TOOLS]
 
 

@@ -90,6 +90,18 @@ python tools/profiler.py data.csv               # human summary of issues
 python tools/profiler.py --clean all data.csv   # writes data.cleaned.csv
 ```
 
+**Open datasets from Hugging Face.** Load any public dataset by id, straight into the
+same profile → clean → analyze path (streamed and row-capped so big datasets stay
+cheap). In the app: type `load imdb` or `load openai/gsm8k`; the agent has a
+`load_hf_dataset` tool. Standalone:
+
+```bash
+pip install datasets
+python tools/hf_tool.py imdb                     # first rows of the train split
+python tools/hf_tool.py tweet_eval emotion --limit 2000
+```
+*(Requires internet to huggingface.co — some locked-down sandboxes block it.)*
+
 ### Static scripted preview (no server) — `web/index.html`
 One self-contained file (charts inlined), zero setup — Maya clicks a question → scripted
 reasoning trace → card. This is what gets the **hosted link**: connect the repo to Vercel
