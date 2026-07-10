@@ -46,6 +46,9 @@ PORT = int(os.environ.get("PORT", "8000"))
 STATE = {"clean": {}}
 
 QUICK = [
+    "Load sample dataset",
+    "What drives churn?",
+    "Average monthly_spend by plan",
     "Prep data for an analysis",
     "Is this data clean enough to trust?",
     "Why is weekly active down?",

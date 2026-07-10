@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 
 import render          # noqa: E402  shared canvas builders + sqlite helpers
 import sql_tool        # noqa: E402
+import analyze         # noqa: E402  generic DuckDB + stats over any loaded dataset
 
 from claude_agent_sdk import (  # noqa: E402
     query, tool, create_sdk_mcp_server, ClaudeAgentOptions,
@@ -180,6 +181,56 @@ async def profile_data(args):
     return _txt("\n".join(lines))
 
 
+@tool("query_dataset", "Run a read-only DuckDB SQL query over the user's LOADED dataset "
+      "(uploaded CSV or HF dataset). The table is named `data`. Use this to answer any "
+      "question about their data — filters, group-bys, aggregates, joins-to-self. Consult "
+      "describe_dataset first if you don't know the columns.",
+      {"sql": str})
+async def query_dataset(args):
+    df = render.UPLOAD["df"]
+    if df is None:
+        return _txt("No dataset loaded. Ask the user to upload a CSV, 'load sample', or load an HF dataset.")
+    try:
+        res = analyze.run_sql(df, (args or {}).get("sql", ""))
+    except Exception as e:
+        return _txt(f"SQL error: {e}")
+    _emit_artifact('<span class="kicker">Query result</span>'
+                   f'<div class="ds-code">{(args or {}).get("sql","")}</div>' + analyze._tbl(res))
+    return _txt(res.head(30).to_markdown(index=False) if len(res) else "(0 rows)")
+
+
+@tool("describe_dataset", "Show the schema (columns, types, null %, cardinality, samples) and "
+      "summary statistics of the user's loaded dataset. Use before querying an unfamiliar dataset.",
+      {})
+async def describe_dataset(args):
+    df = render.UPLOAD["df"]
+    if df is None:
+        return _txt("No dataset loaded.")
+    _emit_artifact(analyze.schema(df))
+    return _txt(f"{render.UPLOAD['name']}: {len(df)} rows × {df.shape[1]} cols. Columns: "
+                + ", ".join(f"{c} ({'num' if analyze.pd.api.types.is_numeric_dtype(df[c]) else 'text'})"
+                            for c in df.columns))
+
+
+@tool("dataset_drivers", "Generic key-driver analysis on the loaded dataset: rank which columns "
+      "most explain a target column, by effect size (variance explained). Works for a numeric or "
+      "binary target. Use for 'what drives/predicts/explains <column>'.",
+      {"target": str})
+async def dataset_drivers(args):
+    df = render.UPLOAD["df"]
+    if df is None:
+        return _txt("No dataset loaded.")
+    target = (args or {}).get("target", "")
+    if target not in df.columns:
+        hit = [c for c in df.columns if target.lower() in str(c).lower()]
+        target = hit[0] if hit else target
+    if target not in df.columns:
+        return _txt(f"Column '{target}' not found. Columns: {list(df.columns)}")
+    canvas, summ = analyze.drivers_of(df, target)
+    _emit_artifact(canvas)
+    return _txt(summ + " (Effect size = variance explained; association, not proven causation.)")
+
+
 @tool("load_hf_dataset", "Load an OPEN dataset from the Hugging Face Hub by id (e.g. "
       "'imdb', 'tweet_eval' with config 'emotion', 'openai/gsm8k' with config 'main') into "
       "the working store, then profile it for data-quality issues. Streams and caps rows so "
@@ -219,7 +270,8 @@ async def analysis_brief(args):
 
 
 DS_TOOLS = [run_sql, key_driver_analysis, feature_adoption, error_scan, wau_trend,
-            detect_data_issues, storytelling, profile_data, analysis_brief, load_hf_dataset]
+            detect_data_issues, storytelling, profile_data, analysis_brief, load_hf_dataset,
+            query_dataset, describe_dataset, dataset_drivers]
 TOOL_NAMES = ["mcp__ds__" + t.name for t in DS_TOOLS]
 
 
@@ -237,8 +289,11 @@ Rules:
   evidence — tell Maya she can open the evidence on the right.
 - Detection is free (read-only); WRITING/changing data needs Maya's approval. Never
   claim you changed data — propose, and let her approve via the panel.
-- If the user has UPLOADED their own dataset, use `profile_data` for cleaning/quality
-  questions (it works on any CSV); otherwise the FlowDash tools above apply.
+- If the user has a LOADED dataset (uploaded CSV, the built-in sample, or an HF dataset),
+  answer questions about IT: `describe_dataset` to learn the columns, `query_dataset` to
+  run DuckDB SQL over table `data`, `dataset_drivers` for "what drives/predicts X", and
+  `profile_data` for cleaning. Do NOT use the FlowDash tools for a loaded dataset. When no
+  dataset is loaded, the FlowDash tools apply.
 - Be concise: 2-5 sentences. The rich card on the right carries the detail.
 - Consult data_dictionary.md (via Read) if you're unsure about a field; it documents
   traps like duration_sec vs active_sec, user_type vs plan, export_csv vs sql_export.

@@ -90,6 +90,21 @@ python tools/profiler.py data.csv               # human summary of issues
 python tools/profiler.py --clean all data.csv   # writes data.cleaned.csv
 ```
 
+**Ask data-science questions about *any* loaded dataset.** Once a dataset is loaded
+(the built-in sample, an upload, or an HF dataset), the agent answers real questions
+about *it* — not just FlowDash — via a generic engine (`tools/analyze.py`, DuckDB + stats):
+
+- **`load sample dataset`** — a built-in customer-churn CSV (genuine driver signal + some dirt).
+- **`what drives churn?`** — generic key-driver: ranks columns by *variance explained*
+  (eta² for categorical, r² for numeric); association, not proven causation.
+- **`average monthly_spend by plan`** — group-by aggregation with a chart.
+- **`distribution of region`** — value counts + chart.
+- **`describe the data`** — schema, null %, cardinality, summary stats.
+- **`SELECT … FROM data`** — raw DuckDB SQL over the loaded frame (table is `data`).
+
+The real LLM agent has matching tools (`describe_dataset`, `query_dataset`, `dataset_drivers`)
+and writes its own DuckDB SQL; the Fast router handles the common shapes instantly.
+
 **Open datasets from Hugging Face.** Load any public dataset by id, straight into the
 same profile → clean → analyze path (streamed and row-capped so big datasets stay
 cheap). In the app: type `load imdb` or `load openai/gsm8k`; the agent has a

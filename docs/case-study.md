@@ -33,6 +33,9 @@ non-technical PM persona (“Maya”). Demo, not a product.
 | 8 | **Kickoff clarifying questions** | ask-first gate vs proceed-on-defaults vs ambiguity-triggered | **Ask 1–3 decision-changing questions, propose defaults, capture as an editable Analysis Brief** | Horvitz mixed-initiative — a few high-value questions, not an interrogation (Opus over-asks). |
 | 9 | **Storytelling audience** | free-text vs preset chips vs infer | **Audience chips (Exec/PM/Eng) that re-tailor** | Lowest friction, most demoable; PAIR *set expectations*. |
 | 10 | **Hosting** | Vercel vs GitHub Pages vs local | **GitHub Pages for the static UI**; live agent runs locally | Sandbox couldn't reach Vercel; Pages was automatable end-to-end. |
+| 11 | **Real vs demo target** | private warehouse vs open data | **Open data (HuggingFace) + solo** → **self-host the SDK (Path A)** | User's data is public + single-user, so data-locality/multi-user (the args for Managed Agents) don't apply; Path A keeps all prior work. |
+| 12 | **Analysis scope** | FlowDash-only vs any dataset | **Generic analysis engine** — DuckDB SQL + stats + generic key-driver over any loaded frame | "Clean any dataset" is half-useful without "analyze any dataset"; make the agent answer real DS questions about the user's data. |
+| 13 | **Generic key-driver method** | ML model vs effect sizes | **Effect sizes (eta² / r² = variance explained)** | Transparent, defensible, no black box; states association-not-causation honestly. |
 
 ---
 

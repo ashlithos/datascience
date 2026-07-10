@@ -28,6 +28,7 @@ DB = os.path.join(ROOT, "data", "flowdash.db")
 
 import sql_tool          # noqa: E402  (read-only SQL runner with its own guards)
 import profiler          # noqa: E402  (generic, dataset-agnostic data profiler)
+import analyze           # noqa: E402  (generic DuckDB + stats analysis over any df)
 from key_driver import scan  # noqa: E402
 
 # ---- bring-your-own-data store (shared by the server endpoints AND the in-process
@@ -431,13 +432,29 @@ def route(question, state=None):
     ql = q.lower()
     state = state or {}
 
-    # raw SQL passthrough
+    # raw SQL passthrough — over the loaded dataset (DuckDB) if one is active,
+    # else over FlowDash (sqlite)
     if re.match(r"^\s*(select|with)\b", ql):
+        if UPLOAD["df"] is not None:
+            return analyze.route_dataset(UPLOAD["df"], q)
         rows, canvas = canvas_sql(q)
         n = len(rows) if rows is not None else 0
         return {"skill": "sql_tool", "calls": [f"sql_tool · {q[:60]}…"],
                 "answer": f"Ran your query (read-only) — {n} row(s). Result on the right.",
                 "canvas": canvas}
+
+    # load the built-in sample dataset (instant, no upload/network needed)
+    if _has(ql, "load sample", "sample dataset", "example dataset", "demo dataset", "load the sample"):
+        import os
+        import pandas as pd
+        df = pd.read_csv(os.path.join(ROOT, "data", "sample_customers.csv"))
+        prof = set_upload("sample_customers.csv", df)
+        return {"skill": "analyze", "calls": ["load sample_customers.csv", "profiler · scan"],
+                "answer": f"Loaded <b>sample_customers.csv</b> — {len(df)} rows × {df.shape[1]} "
+                          "columns (customer churn, with genuine driver signal + some dirt to clean). "
+                          "Ask me things like “what drives churn?”, “average monthly_spend by plan”, "
+                          "“distribution of region”, or “is this clean?”.",
+                "canvas": analyze.schema(df)}
 
     # load an open Hugging Face dataset by id
     if _has(ql, "load ", "huggingface", "hugging face", "hf dataset", "hf:") and not ql.startswith("select"):
@@ -489,6 +506,19 @@ def route(question, state=None):
                           "sql_tool · DISTINCT region", "components · cleaning panel"],
                 "answer": "Not quite yet — but the issues are small and fixable. I found <b>three</b>: 35 duplicate rows, 28 negative durations, and EMEA spelled four ways. Approve each on the right; I won't write anything until you do. <i>(Tip: upload your own CSV with the file button to clean any dataset.)</i>",
                 "canvas": canvas_cleaning(state.get("clean"))}
+
+    # a dataset is loaded → answer DS questions about IT (generic engine), and do
+    # NOT fall through to the FlowDash demo handlers
+    if UPLOAD["df"] is not None:
+        r = analyze.route_dataset(UPLOAD["df"], q)
+        if r:
+            return r
+        return {"skill": "analyze", "calls": ["schema"],
+                "answer": "I can answer questions about your loaded dataset — try "
+                          "“what drives &lt;column&gt;?”, “&lt;metric&gt; by &lt;dimension&gt;”, "
+                          "“distribution of &lt;column&gt;”, a raw <code>SELECT … FROM data</code>, "
+                          "or “is this clean?”.",
+                "canvas": analyze.schema(UPLOAD["df"])}
 
     # key driver — "why ... down/drop", "cause", "driver"
     if _has(ql, "why", "driver", "caus", "reason", "explain") and _has(ql, "down", "drop", "decl", "fall", "fell", "lower", "active", "wau", "users") \
