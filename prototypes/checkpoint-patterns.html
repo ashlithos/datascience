@@ -298,9 +298,8 @@ const SECTIONS = [
    ========================================================================= */
 const PROTOS = [
   { key:'checkpoint',   tag:'1 · Full checkpoint',       sub:'Review everything, then generate', ctrl:'high' },
-  { key:'hybridStream', tag:'3a · Skeleton stream',      sub:'Watch it fill; pause or steer anytime', ctrl:'mid' },
-  { key:'hybridGates',  tag:'3b · Auto-advancing gates', sub:'Countdown per section; step in or it proceeds', ctrl:'mid' },
-  { key:'autopilot',    tag:'2 · Full autopilot',        sub:'No input; iterate on the draft', ctrl:'low' },
+  { key:'hybridStream', tag:'2a · Skeleton stream',      sub:'Watch it fill; pause or steer anytime', ctrl:'mid' },
+  { key:'hybridGates',  tag:'2b · Auto-advancing gates', sub:'Countdown per section; step in or it proceeds', ctrl:'mid' },
 ];
 
 const SEAMS = {
@@ -321,12 +320,6 @@ const SEAMS = {
     ['Takeover point','During the countdown — which overlaps the previous section’s write, so it costs no extra wait.'],
     ['Determinism','Plan + inputs shown deterministically; the timer gates the probabilistic write, defaulting to proceed.'],
     ['Cost','Near-zero. Silence = consent; intervention is the exception, not the step.'],
-  ],
-  autopilot:[
-    ['Trust gap','Deferred — nothing to check until the whole draft lands.'],
-    ['Takeover point','Only after generation. No seam to grab mid-flight.'],
-    ['Determinism','Opaque while running; a black box that emits a result.'],
-    ['Cost','Zero up front, but wrong-direction runs waste the whole generation.'],
   ],
 };
 
@@ -518,36 +511,7 @@ builders.checkpoint = function(){
   return {node:frame, start:reset, reset};
 };
 
-/* ============================ 2 · FULL AUTOPILOT ======================== */
-builders.autopilot = function(){
-  const {frame, body, panel, chat, setStatus} = makeFrame();
-  let cancelled=false;
-  function reset(){
-    cancelled=false;
-    const s=panel.querySelector('.steerbar'); if(s)s.remove();
-    setStatus('','idle');
-    body.innerHTML='';
-    body.appendChild(el('div','micro','No input requested — the agent just writes the whole thing'));
-    body.appendChild(el('div','notice','Autopilot: Maya gives no up-front steer. She watches the finished draft appear, then iterates. Simple — but a wrong-direction run isn’t caught until it’s fully built.'));
-    chat.setAction('Generate story', run);
-  }
-  async function run(){
-    cancelled=false;
-    setStatus('live','generating — no seams to grab');
-    body.innerHTML='';
-    const nodes = SECTIONS.map((s,i)=>{ const n=sectionNode(s,i); body.appendChild(n); return n; });
-    chat.setHint('Writing the whole draft… no seams to grab mid-flight.');
-    for(let i=0;i<SECTIONS.length;i++){ if(cancelled)return; await fillSection(nodes[i], SECTIONS[i], {isCancelled:()=>cancelled}); }
-    if(cancelled)return;
-    setStatus('done','complete');
-    // iteration happens in the one chat input (left) — never a second box on the right
-    chat.setInput('Now iterate on the finished draft — e.g. “lead with sql_export”',
-      v=>chat.setHint('…re-running the whole story with your note: “'+v+'”'), 'Revise');
-  }
-  return {node:frame, start:reset, reset:()=>{cancelled=true; reset();}};
-};
-
-/* ============ 3a · SKELETON STREAM (merged: pause + steer) ============== */
+/* ============ 2a · SKELETON STREAM (merged: pause + steer) ============== */
 builders.hybridStream = function(){
   const {frame, body, panel, chat, setStatus} = makeFrame();
   let paused=false, cancelled=false, resumeSignal=null, nodes=[], currentIdx=0;
@@ -618,7 +582,7 @@ builders.hybridStream = function(){
   return {node:frame, start:reset, reset:()=>{cancelled=true; paused=false; if(resumeSignal){resumeSignal();resumeSignal=null;} reset();}};
 };
 
-/* ============ 3b · AUTO-ADVANCING GATES (non-blocking countdown) ======== */
+/* ============ 2b · AUTO-ADVANCING GATES (non-blocking countdown) ======== */
 builders.hybridGates = function(){
   const {frame, body, chat, setStatus} = makeFrame();
   let cancelled=false; const timers=[]; let pre=[];   // pre[i] = 'skip' | {edit} | null
@@ -743,7 +707,6 @@ function descFor(key){
     checkpoint:'The heavy end. Everything the story will use — drivers, clean recipe, outline, tone — is laid out for approval before a single sentence is generated. Maximum confidence, maximum up-front cost. Shown here as the baseline the hybrids push against.',
     hybridStream:'Middle ground · the streaming outline. The entire outline renders first as ghost sections, then fills slowly, top to bottom. One bar does both moves: pause to freeze the run and drop a note on a not-yet-written section, or type a steer that pins to whatever’s being written without stopping it. (This merges the two earlier stream variants — pausing and steering were the same pattern seen from two angles.)',
     hybridGates:'Middle ground · the countdown. A checkpoint that never blocks. While one section is being written — time Maya is waiting anyway — the next section’s plan appears with a short countdown. Ignore it and it proceeds on its own; or edit the plan, skip the section, or approve now before the timer expires. Oversight with no added latency.',
-    autopilot:'The light end. No up-front input; the agent writes the whole draft and Maya reacts to the finished thing. Frictionless to start, but there’s no seam to grab if it heads the wrong way — a bad run isn’t caught until it’s fully built.',
   })[key];
 }
 
