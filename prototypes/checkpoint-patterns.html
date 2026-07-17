@@ -157,6 +157,24 @@ header.page{margin-bottom:20px}
 .skel.w90{width:90%} .skel.w70{width:70%} .skel.w80{width:80%} .skel.w60{width:60%} .skel.w40{width:40%}
 .sec.paused .skel::after{animation-play-state:paused}
 
+/* generic shimmer for chart-shaped skeletons */
+.shimmer{position:relative; overflow:hidden; background:var(--surface-container-high)}
+.shimmer::after{content:""; position:absolute; inset:0;
+  background:linear-gradient(90deg, transparent, color-mix(in srgb,var(--on-surface) 8%,transparent), transparent);
+  transform:translateX(-100%); animation:shim 1.5s ease-in-out infinite}
+.sec.paused .shimmer::after{animation-play-state:paused}
+
+/* faux charts — skeleton while writing, then a simple figure (the artifact feel) */
+.chart{margin:11px 0 2px}
+.chart-cap{font-size:10.5px; letter-spacing:.3px; text-transform:uppercase;
+  color:var(--on-surface-variant); margin-top:7px}
+.chart-line{height:60px; border-radius:8px}
+.chart-bars{display:flex; align-items:flex-end; gap:7px; height:60px}
+.chart-bars .cbar{flex:1; border-radius:4px 4px 0 0; min-height:6px}
+.chart-grid{display:grid; grid-template-columns:repeat(12,1fr); gap:4px}
+.chart-grid .ccell{border-radius:3px; aspect-ratio:1}
+.chart svg{display:block; width:100%; height:60px}
+
 /* prose paragraphs fade in as they're "written" */
 .sec-body p.rin{animation:rin .35s ease both}
 @keyframes rin{from{opacity:0}to{opacity:1}}
@@ -178,11 +196,7 @@ header.page{margin-bottom:20px}
 /* per-section gate row / countdown */
 .gate{display:flex; align-items:center; gap:8px; margin-top:10px; flex-wrap:wrap;
   padding-top:10px; border-top:1px dashed var(--outline-variant)}
-.gate .lbl{font-size:11.5px; color:var(--tertiary)}
-.gate.cd-gate .lbl{flex:0 0 auto}
-.cd{flex:1; min-width:70px; height:5px; border-radius:3px; overflow:hidden;
-  background:var(--surface-container-high)}
-.cd-fill{height:100%; width:100%; background:var(--secondary)}
+.gate .lbl{font-size:11.5px; color:var(--tertiary); flex:1}
 
 /* steer / interrupt bar */
 .steerbar{border-top:1px solid var(--outline-variant); background:var(--surface-container-low);
@@ -265,20 +279,20 @@ const INPUT_CSS = 'flex:1;background:var(--surface-container);border:1px solid v
    Shared story content (the key-driver story for "why did WAU drop?")
    ========================================================================= */
 const SECTIONS = [
-  { id:'brief', title:'Executive brief',
-    inputs:[{t:'WAU −18% wk/wk', c:'bad'},{t:'window: wk4→wk5', c:''},{t:'clean recipe applied', c:'good'}],
+  { id:'brief', title:'Executive brief', chart:'line-down', chartCap:'WAU · wk4 → wk5',
+    inputs:[{t:'WAU −18% wk/wk'},{t:'window: wk4→wk5'},{t:'clean recipe applied'}],
     body:['Weekly active users fell <strong>18%</strong> week over week. The drop is not broad — it concentrates in one slice, and one unrelated surface actually rose. Read on before reacting to the headline number.'] },
-  { id:'kd1', title:'Key driver #1 — android × new users',
-    inputs:[{t:'android × new  −61%', c:'bad'},{t:'confidence 0.82', c:'accent'},{t:'~55 combos scanned', c:''}],
+  { id:'kd1', title:'Key driver #1 — android × new users', chart:'bars', chartCap:'cohort × platform · Δ WAU',
+    inputs:[{t:'android × new −61%'},{t:'confidence 0.82'},{t:'~55 combos scanned'}],
     body:['Localising across ~55 dimension crossings, the loss sits almost entirely in <strong>new users on Android</strong> (≈ −61% vs prior week).','Single-dimension reads — platform alone, or cohort alone — understate it. The interaction is the story.'] },
-  { id:'kd2', title:'Key driver #2 — the sql_export surprise',
-    inputs:[{t:'sql_export +34%', c:'good'},{t:'not user-facing WAU', c:'warn'}],
+  { id:'kd2', title:'Key driver #2 — the sql_export surprise', chart:'line-up', chartCap:'sql_export · weekly runs',
+    inputs:[{t:'sql_export +34%'},{t:'not user-facing WAU'}],
     body:['Counter to the WAU dip, <strong>sql_export</strong> usage climbed 34%. It doesn’t offset the active-user loss, but it reframes the week: power users leaned in even as new-user onboarding stumbled.'] },
-  { id:'evidence', title:'Evidence',
-    inputs:[{t:'dedupe: session_id', c:''},{t:'duration_sec>0', c:''},{t:'region_clean', c:''}],
+  { id:'evidence', title:'Evidence', chart:'grid', chartCap:'≈55 combinations scanned',
+    inputs:[{t:'dedupe: session_id'},{t:'duration_sec>0'},{t:'region_clean'}],
     body:['All figures use the canonical clean recipe: de-dupe on <span class="mono">session_id</span>, drop <span class="mono">duration_sec ≤ 0</span>, normalise region. The full combination grid is available on request.'] },
-  { id:'recs', title:'Recommendations',
-    inputs:[{t:'2 actions', c:'accent'}],
+  { id:'recs', title:'Recommendations', chart:null,
+    inputs:[{t:'2 actions'}],
     body:['1) Pull the Android new-user onboarding funnel for wk5.','2) Interview 3–5 power users behind the sql_export rise — there may be a workflow worth productising.'] },
 ];
 
@@ -376,7 +390,7 @@ function sectionNode(sec, idx){
   const head = el('div','sec-head');
   head.appendChild(el('div','sec-num', String(idx+1)));
   head.appendChild(el('div','sec-title', sec.title));
-  const flag = el('div','sec-flag','queued'); flag.dataset.role='flag';
+  const flag = el('div','sec-flag',''); flag.dataset.role='flag';
   head.appendChild(flag);
   n.appendChild(head);
   const body = el('div','sec-body'); body.dataset.role='body';
@@ -385,11 +399,44 @@ function sectionNode(sec, idx){
 }
 function skeletonLines(widths){ const f=document.createDocumentFragment();
   widths.forEach(w=>f.appendChild(el('span','skel '+w))); return f; }
-/* chips are intentionally neutral — the pattern is the subject, not the colors */
+/* chips are intentionally neutral — the pattern is the subject, not the colors.
+   Only the inputs-drawer pattern still uses them (as its toggle interaction). */
 function chipRow(inputs, toggle){ const row=el('div','chips');
   inputs.forEach(inp=>{ const ch=el('span','chip'+(toggle?' toggle':''),
     inp.t + (toggle?' <span class="x">×</span>':'')); if(toggle) ch.dataset.on='1'; row.appendChild(ch); });
   return row; }
+
+/* faux chart — shimmering skeleton while a section is being written */
+function chartSkel(type){
+  if(!type) return document.createDocumentFragment();
+  const wrap=el('div','chart');
+  if(type==='bars'){ const g=el('div','chart-bars'); [45,72,33,90,58,28].forEach(h=>{ const b=el('span','cbar shimmer'); b.style.height=h+'%'; g.appendChild(b); }); wrap.appendChild(g); }
+  else if(type==='grid'){ const g=el('div','chart-grid'); for(let i=0;i<24;i++) g.appendChild(el('span','ccell shimmer')); wrap.appendChild(g); }
+  else { wrap.appendChild(el('div','chart-line shimmer')); }
+  return wrap;
+}
+/* resolved figure — simple, mostly-neutral, one accent (coral = erosion) */
+function chartFigure(type, sec){
+  if(!type) return document.createDocumentFragment();
+  const wrap=el('div','chart rin');
+  const NEU='var(--surface-variant)', ERO='var(--erosion)';
+  if(type==='bars'){
+    const g=el('div','chart-bars');
+    [{h:80},{h:64},{h:88},{h:24,ero:true},{h:70},{h:52}].forEach(d=>{ const b=el('span','cbar'); b.style.height=d.h+'%'; b.style.background=d.ero?ERO:NEU; g.appendChild(b); });
+    wrap.appendChild(g);
+  } else if(type==='grid'){
+    const g=el('div','chart-grid'); const hot=new Set([9,10,21]);
+    for(let i=0;i<24;i++){ const c=el('span','ccell'); c.style.background = hot.has(i)?ERO : (i%4===0?NEU:'var(--surface-container-high)'); g.appendChild(c); }
+    wrap.appendChild(g);
+  } else {
+    const up = type==='line-up';
+    const pts = up ? '0,27 18,24 36,20 54,15 72,11 100,4' : '0,6 20,9 40,11 60,16 80,22 100,29';
+    const stroke = up ? 'var(--c1)' : ERO;
+    wrap.innerHTML='<svg viewBox="0 0 100 32" preserveAspectRatio="none"><polyline fill="none" stroke="'+stroke+'" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" points="'+pts+'"/></svg>';
+  }
+  if(sec && sec.chartCap) wrap.appendChild(el('div','chart-cap', sec.chartCap));
+  return wrap;
+}
 
 /* shared panel frame */
 function makeFrame(panelBarTitle){
@@ -422,17 +469,18 @@ async function fillSection(node, sec, opts={}){
   const steer = b.querySelector('.steer-note'); const steerHtml = steer?steer.outerHTML:'';
   b.innerHTML=''; if(steerHtml) b.insertAdjacentHTML('beforeend',steerHtml);
   b.appendChild(skeletonLines(['w90','w80','w60']));
+  b.appendChild(chartSkel(sec.chart));
   await sleep(skeletonMs); await waitIfPaused(); if(isCancelled()) return;
   b.innerHTML=''; if(steerHtml) b.insertAdjacentHTML('beforeend',steerHtml);
-  b.appendChild(chipRow(sec.inputs,false));
   for(const p of sec.body){
     await waitIfPaused(); if(isCancelled()) return;
     const para = el('p','rin', p); b.appendChild(para);
     await sleep(paraMs);
   }
+  b.appendChild(chartFigure(sec.chart, sec));
   if(node.dataset.steer) b.insertAdjacentHTML('beforeend','<p class="rin" style="color:var(--secondary);font-size:12px">↳ adjusted per your steer.</p>');
   node.className='sec done';
-  node.querySelector('[data-role=flag]').textContent='done';
+  node.querySelector('[data-role=flag]').textContent='';
 }
 
 /* ============================ 1 · FULL CHECKPOINT ======================== */
@@ -588,22 +636,22 @@ builders.hybridGates = function(){
       node.className='sec active';
       node.querySelector('[data-role=flag]').textContent='up next';
       const b=node.querySelector('[data-role=body]'); b.innerHTML='';
-      b.appendChild(el('div','micro','will use these inputs'));
-      b.appendChild(chipRow(sec.inputs,false));
+      b.appendChild(el('div','micro','preview'));
       b.appendChild(skeletonLines(['w90','w70']));
+      b.appendChild(chartSkel(sec.chart));
       const g=el('div','gate cd-gate');
-      const lbl=el('span','lbl');
-      const cd=el('div','cd'); const fill=el('div','cd-fill'); cd.appendChild(fill);
-      const editB=el('button','btn tiny','Edit'); const skipB=el('button','btn ghost tiny','Skip'); const nowB=el('button','btn primary tiny','Write now');
-      g.appendChild(lbl); g.appendChild(cd); g.appendChild(editB); g.appendChild(skipB); g.appendChild(nowB);
+      const lbl=el('span','lbl','auto-writes when the timer ends');
+      const editB=el('button','btn tiny','Edit'); const skipB=el('button','btn ghost tiny','Skip');
+      const nowB=el('button','btn primary tiny','');   // the countdown lives in this button
+      g.appendChild(lbl); g.appendChild(editB); g.appendChild(skipB); g.appendChild(nowB);
       node.appendChild(g);
       let left=CD_SECONDS, done=false;
-      lbl.textContent='writes in '+left+'s';
-      requestAnimationFrame(()=>{ fill.style.transition='width '+CD_SECONDS+'s linear'; fill.style.width='0%'; });
-      const tick=setInterval(()=>{ left--; if(left>=0) lbl.textContent='writes in '+Math.max(left,0)+'s'; }, 1000); timers.push(tick);
+      const paint=()=>{ nowB.textContent = left>0 ? ('Write now · '+left) : 'Writing…'; };
+      paint();
+      const tick=setInterval(()=>{ left--; if(left>=0) paint(); }, 1000); timers.push(tick);
       const to=setTimeout(()=>fin('approve'), CD_SECONDS*1000); timers.push(to);
       function fin(d){ if(done)return; done=true; clearInterval(tick); clearTimeout(to); g.remove(); resolve(d); }
-      editB.onclick=()=>{ clearInterval(tick); clearTimeout(to); fill.style.transition='none';
+      editB.onclick=()=>{ clearInterval(tick); clearTimeout(to);
         g.innerHTML='';
         const inp=el('input'); inp.placeholder='adjust the plan for this section…'; inp.style.cssText=INPUT_CSS;
         const ok=el('button','btn primary tiny','Approve with edit'); g.appendChild(inp); g.appendChild(ok); inp.focus();
@@ -618,13 +666,13 @@ builders.hybridGates = function(){
     if(decision==='skip'){ node.className='sec queued'; b.innerHTML='<p style="font-size:12px">— skipped by you —</p>'; node.querySelector('[data-role=flag]').textContent='skipped'; return; }
     node.className='sec active';
     node.querySelector('[data-role=flag]').textContent='writing…';
-    b.innerHTML=''; b.appendChild(skeletonLines(['w90','w80','w60']));
+    b.innerHTML=''; b.appendChild(skeletonLines(['w90','w80','w60'])); b.appendChild(chartSkel(sec.chart));
     await sleep(WRITE_MS); if(cancelled)return;
     b.innerHTML='';
     if(node.dataset.steer && node.dataset.steer!=='1') b.appendChild(el('div','steer-note','<span class="k">your edit</span><span>'+node.dataset.steer+'</span>'));
-    b.appendChild(chipRow(sec.inputs,false));
     sec.body.forEach(p=>b.appendChild(el('p','rin',p)));
-    node.className='sec done'; node.querySelector('[data-role=flag]').textContent='done';
+    b.appendChild(chartFigure(sec.chart, sec));
+    node.className='sec done'; node.querySelector('[data-role=flag]').textContent='';
   }
   async function run(){
     cancelled=false; clearTimers();
@@ -685,13 +733,15 @@ builders.hybridInputs = function(){
       b.appendChild(el('div','micro','facts feeding this section'));
       b.appendChild(makeToggleRow(sec,n));
       b.appendChild(skeletonLines(['w90','w70']));
+      b.appendChild(chartSkel(sec.chart));
       await sleep(INPUTS_WINDOW);
       if(cancelled)return;
       const kept=[...b.querySelectorAll('.chip')].filter(c=>c.dataset.on==='1').map(c=>c.textContent.replace('×','').trim());
-      b.querySelectorAll('.skel').forEach(s=>s.remove());
+      b.querySelectorAll('.skel, .chart').forEach(s=>s.remove());
       sec.body.forEach(p=>b.appendChild(el('p','rin',p)));
+      b.appendChild(chartFigure(sec.chart, sec));
       if(n.dataset.edited) b.appendChild(el('p','rin','<span style="color:var(--secondary);font-size:12px">↳ re-written using only the inputs you kept ('+kept.length+').</span>'));
-      n.className='sec done'; n.querySelector('[data-role=flag]').textContent='done';
+      n.className='sec done'; n.querySelector('[data-role=flag]').textContent='';
     }
     if(cancelled)return;
     setStatus('done','complete'); chat.setHint('Story complete. Reset the demo to run again.');
