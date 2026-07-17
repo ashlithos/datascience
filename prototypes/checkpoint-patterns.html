@@ -185,19 +185,11 @@ header.page{margin-bottom:20px}
 .sec-body p.rin{animation:rin .35s ease both}
 @keyframes rin{from{opacity:0}to{opacity:1}}
 
-/* input chips (the "what's going in") */
+/* neutral chips — used only in the checkpoint plan review */
 .chips{display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 2px}
 .chip{display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:500;
   padding:4px 9px; border-radius:var(--r-sm); background:var(--surface-variant);
   color:var(--on-surface-variant); border:1px solid transparent; cursor:default}
-.chip.accent{background:var(--primary-container); color:var(--on-primary-container)}
-.chip.good{background:var(--good-container); color:var(--good)}
-.chip.warn{background:var(--tertiary-container); color:var(--on-tertiary-container)}
-.chip.bad{background:var(--error-container); color:var(--on-error-container)}
-.chip.toggle{cursor:pointer; transition:opacity .12s, filter .12s}
-.chip.toggle:hover{filter:brightness(1.1)}
-.chip.off{opacity:.4; text-decoration:line-through; background:var(--surface-container-high)}
-.chip .x{opacity:.7; font-weight:600}
 
 /* per-section gate row / countdown */
 .gate{display:flex; align-items:center; gap:8px; margin-top:10px; flex-wrap:wrap;
@@ -278,8 +270,7 @@ const STREAM_PARA     = 700;    // gap between revealed paragraphs
 const STREAM_GAP      = 550;    // pause between finished sections
 const CD_SECONDS      = 4;      // per-section countdown before auto-write
 const WRITE_MS        = 2200;   // how long a section takes to write
-const INPUTS_WINDOW   = 1600;   // window to toggle inputs before prose commits
-const INPUT_CSS = 'flex:1;background:var(--surface-container);border:1px solid var(--outline-variant);border-radius:var(--r-xl);padding:6px 11px;color:var(--on-surface);font-family:inherit;font-size:12px';
+const INPUT_CSS ='flex:1;background:var(--surface-container);border:1px solid var(--outline-variant);border-radius:var(--r-xl);padding:6px 11px;color:var(--on-surface);font-family:inherit;font-size:12px';
 
 /* =========================================================================
    Shared story content (the key-driver story for "why did WAU drop?")
@@ -309,7 +300,6 @@ const PROTOS = [
   { key:'checkpoint',   tag:'1 · Full checkpoint',       sub:'Review everything, then generate', ctrl:'high' },
   { key:'hybridStream', tag:'3a · Skeleton stream',      sub:'Watch it fill; pause or steer anytime', ctrl:'mid' },
   { key:'hybridGates',  tag:'3b · Auto-advancing gates', sub:'Countdown per section; step in or it proceeds', ctrl:'mid' },
-  { key:'hybridInputs', tag:'3c · Inputs drawer',        sub:'Toggle the facts feeding each part', ctrl:'mid' },
   { key:'autopilot',    tag:'2 · Full autopilot',        sub:'No input; iterate on the draft', ctrl:'low' },
 ];
 
@@ -331,12 +321,6 @@ const SEAMS = {
     ['Takeover point','During the countdown — which overlaps the previous section’s write, so it costs no extra wait.'],
     ['Determinism','Plan + inputs shown deterministically; the timer gates the probabilistic write, defaulting to proceed.'],
     ['Cost','Near-zero. Silence = consent; intervention is the exception, not the step.'],
-  ],
-  hybridInputs:[
-    ['Trust gap','Content-level — she sees the exact facts feeding each section and can veto them.'],
-    ['Takeover point','Toggle any input chip off while it shimmers; the section re-plans around what she keeps.'],
-    ['Determinism','The inputs are deterministic data; she edits data, not prose.'],
-    ['Cost','Low-medium. Iterate on the evidence, not the wording.'],
   ],
   autopilot:[
     ['Trust gap','Deferred — nothing to check until the whole draft lands.'],
@@ -405,12 +389,6 @@ function sectionNode(sec, idx){
 }
 function skeletonLines(widths){ const f=document.createDocumentFragment();
   widths.forEach(w=>f.appendChild(el('span','skel '+w))); return f; }
-/* chips are intentionally neutral — the pattern is the subject, not the colors.
-   Only the inputs-drawer pattern still uses them (as its toggle interaction). */
-function chipRow(inputs, toggle){ const row=el('div','chips');
-  inputs.forEach(inp=>{ const ch=el('span','chip'+(toggle?' toggle':''),
-    inp.t + (toggle?' <span class="x">×</span>':'')); if(toggle) ch.dataset.on='1'; row.appendChild(ch); });
-  return row; }
 
 /* faux chart — shimmering skeleton that also PREVIEWS what's being built:
    the chart type, its caption, and (while writing) live work-in-progress steps. */
@@ -753,60 +731,6 @@ builders.hybridGates = function(){
   return {node:frame, start:reset, reset:()=>{cancelled=true; clearTimers(); reset();}};
 };
 
-/* ============================ 3c · INPUTS DRAWER ======================== */
-builders.hybridInputs = function(){
-  const {frame, body, chat, setStatus} = makeFrame();
-  let cancelled=false;
-  function reset(){
-    cancelled=false;
-    setStatus('','idle');
-    body.innerHTML='';
-    body.appendChild(el('div','micro','See the facts feeding each section; toggle any off while it forms'));
-    body.appendChild(el('div','notice','Iterate on the <strong>evidence</strong>, not the wording. Each forming section carries the input chips it’s built from. Click a chip to exclude that fact before the prose commits — Maya edits data, the agent re-writes around it.'));
-    chat.setAction('Start generating', run);
-  }
-  function makeToggleRow(sec, node){
-    const row = chipRow(sec.inputs, true);
-    row.querySelectorAll('.chip').forEach(ch=>{
-      ch.onclick=()=>{ const on=ch.dataset.on==='1'; ch.dataset.on=on?'0':'1'; ch.classList.toggle('off',on);
-        node.dataset.edited='1';
-        node.querySelector('[data-role=flag]').textContent='inputs edited'; };
-    });
-    return row;
-  }
-  async function run(){
-    cancelled=false;
-    setStatus('live','building — inputs are editable');
-    body.innerHTML='';
-    chat.setHint('Click any input chip to exclude that fact before its section commits →');
-    const nodes = SECTIONS.map((s,i)=>{ const n=sectionNode(s,i); body.appendChild(n); return n; });
-    for(let i=0;i<SECTIONS.length;i++){
-      if(cancelled)return;
-      const n=nodes[i], sec=SECTIONS[i];
-      n.className='sec active';
-      n.querySelector('[data-role=flag]').textContent='inputs — click to exclude';
-      n.scrollIntoView({block:'nearest'});
-      const b=n.querySelector('[data-role=body]');
-      b.innerHTML='';
-      b.appendChild(el('div','micro','facts feeding this section'));
-      b.appendChild(makeToggleRow(sec,n));
-      b.appendChild(skeletonLines(['w90','w70']));
-      b.appendChild(chartSkel(sec));
-      await sleep(INPUTS_WINDOW);
-      if(cancelled)return;
-      const kept=[...b.querySelectorAll('.chip')].filter(c=>c.dataset.on==='1').map(c=>c.textContent.replace('×','').trim());
-      b.querySelectorAll('.skel, .chart').forEach(s=>s.remove());
-      sec.body.forEach(p=>b.appendChild(el('p','rin',p)));
-      b.appendChild(chartFigure(sec.chart, sec));
-      if(n.dataset.edited) b.appendChild(el('p','rin','<span style="color:var(--secondary);font-size:12px">↳ re-written using only the inputs you kept ('+kept.length+').</span>'));
-      n.className='sec done'; n.querySelector('[data-role=flag]').textContent='';
-    }
-    if(cancelled)return;
-    setStatus('done','complete'); chat.setHint('Story complete. Reset the demo to run again.');
-  }
-  return {node:frame, start:reset, reset:()=>{cancelled=true; reset();}};
-};
-
 /* =========================================================================
    Wire up: build all stages + spectrum switcher
    ========================================================================= */
@@ -819,7 +743,6 @@ function descFor(key){
     checkpoint:'The heavy end. Everything the story will use — drivers, clean recipe, outline, tone — is laid out for approval before a single sentence is generated. Maximum confidence, maximum up-front cost. Shown here as the baseline the hybrids push against.',
     hybridStream:'Middle ground · the streaming outline. The entire outline renders first as ghost sections, then fills slowly, top to bottom. One bar does both moves: pause to freeze the run and drop a note on a not-yet-written section, or type a steer that pins to whatever’s being written without stopping it. (This merges the two earlier stream variants — pausing and steering were the same pattern seen from two angles.)',
     hybridGates:'Middle ground · the countdown. A checkpoint that never blocks. While one section is being written — time Maya is waiting anyway — the next section’s plan appears with a short countdown. Ignore it and it writes itself; or edit the plan, skip the section, or write-now before the timer expires. Oversight with no added latency.',
-    hybridInputs:'Middle ground · the evidence. Iterate on the facts, not the wording. Every forming section carries the input chips it’s built from; click one to exclude that fact before the prose commits. Maya edits the data going in; the agent writes around what she keeps.',
     autopilot:'The light end. No up-front input; the agent writes the whole draft and Maya reacts to the finished thing. Frictionless to start, but there’s no seam to grab if it heads the wrong way — a bad run isn’t caught until it’s fully built.',
   })[key];
 }
