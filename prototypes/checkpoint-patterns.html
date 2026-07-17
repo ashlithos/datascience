@@ -79,12 +79,13 @@ header.page{margin-bottom:20px}
 .stage-desc{color:var(--on-surface-variant); font-size:14px; margin:2px 0 14px; max-width:82ch}
 
 /* ---- the two-pane frame (chat + side panel) ---------------------------- */
+/* fixed-height screen — the panel scrolls internally rather than growing the page */
 .frame{display:grid; grid-template-columns:300px 1fr; gap:0;
   border:1px solid var(--outline-variant); border-radius:var(--r-lg); overflow:hidden;
-  min-height:560px; background:var(--surface-container-lowest)}
-@media (max-width:820px){ .frame{grid-template-columns:1fr} }
+  height:600px; background:var(--surface-container-lowest)}
+@media (max-width:820px){ .frame{grid-template-columns:1fr; height:auto} }
 .chat{border-right:1px solid var(--outline-variant); background:var(--surface-container-low);
-  display:flex; flex-direction:column}
+  display:flex; flex-direction:column; min-height:0}
 .chat-scroll{padding:16px; flex:1; overflow:auto}
 .chat .who{font-size:11px; letter-spacing:.4px; text-transform:uppercase;
   color:var(--on-surface-variant); margin:14px 0 5px}
@@ -98,7 +99,7 @@ header.page{margin-bottom:20px}
 .btn.block{display:block; width:100%; text-align:center; padding:10px 13px}
 .chat-hint{font-size:12px; color:var(--on-surface-variant); line-height:1.4}
 
-.panel{position:relative; background:var(--surface-container-lowest); display:flex; flex-direction:column}
+.panel{position:relative; background:var(--surface-container-lowest); display:flex; flex-direction:column; min-height:0}
 .panel-bar{display:flex; align-items:center; gap:10px; padding:11px 16px;
   border-bottom:1px solid var(--outline-variant); background:var(--surface-container-low)}
 .panel-bar .title{font-size:13px; font-weight:500}
@@ -174,6 +175,11 @@ header.page{margin-bottom:20px}
 .chart-grid{display:grid; grid-template-columns:repeat(12,1fr); gap:4px}
 .chart-grid .ccell{border-radius:3px; aspect-ratio:1}
 .chart svg{display:block; width:100%; height:60px}
+/* skeleton chart tells you what's coming + its progress */
+.chart-wip{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px}
+.chart-type{font-size:10.5px; letter-spacing:.3px; text-transform:uppercase; color:var(--on-surface-variant)}
+.chart-step{font-size:11px; color:var(--secondary)}
+.chart-cap--ghost{color:var(--on-surface-variant); opacity:.65}
 
 /* prose paragraphs fade in as they're "written" */
 .sec-body p.rin{animation:rin .35s ease both}
@@ -406,13 +412,29 @@ function chipRow(inputs, toggle){ const row=el('div','chips');
     inp.t + (toggle?' <span class="x">×</span>':'')); if(toggle) ch.dataset.on='1'; row.appendChild(ch); });
   return row; }
 
-/* faux chart — shimmering skeleton while a section is being written */
-function chartSkel(type){
-  if(!type) return document.createDocumentFragment();
+/* faux chart — shimmering skeleton that also PREVIEWS what's being built:
+   the chart type, its caption, and (while writing) live work-in-progress steps. */
+function chartSkel(sec, mode){
+  const type = sec && sec.chart; if(!type) return document.createDocumentFragment();
+  mode = mode || 'building';
   const wrap=el('div','chart');
+  const typeLabel = type==='bars' ? 'bar chart' : type==='grid' ? 'heatmap grid' : 'line chart';
+  const head=el('div','chart-wip');
+  head.innerHTML='<span class="chart-type">'+typeLabel+'</span><span class="chart-step" data-role="chartstep"></span>';
+  wrap.appendChild(head);
   if(type==='bars'){ const g=el('div','chart-bars'); [45,72,33,90,58,28].forEach(h=>{ const b=el('span','cbar shimmer'); b.style.height=h+'%'; g.appendChild(b); }); wrap.appendChild(g); }
   else if(type==='grid'){ const g=el('div','chart-grid'); for(let i=0;i<24;i++) g.appendChild(el('span','ccell shimmer')); wrap.appendChild(g); }
   else { wrap.appendChild(el('div','chart-line shimmer')); }
+  if(sec.chartCap) wrap.appendChild(el('div','chart-cap chart-cap--ghost', sec.chartCap));
+  const stepEl = head.querySelector('[data-role=chartstep]');
+  if(mode==='preview'){
+    stepEl.textContent='renders on approve';
+  } else {
+    const steps=['querying rows…','applying clean recipe…','plotting…'];
+    let i=0; stepEl.textContent=steps[0];
+    const adv=()=>{ if(!stepEl.isConnected) return; i++; if(i<steps.length){ stepEl.textContent=steps[i]; setTimeout(adv,650); } };
+    setTimeout(adv,650);
+  }
   return wrap;
 }
 /* resolved figure — simple, mostly-neutral, one accent (coral = erosion) */
@@ -465,11 +487,12 @@ async function fillSection(node, sec, opts={}){
   const {skeletonMs=STREAM_SKELETON, paraMs=STREAM_PARA, isCancelled=()=>false, waitIfPaused=async()=>{}} = opts;
   node.className='sec active';
   node.querySelector('[data-role=flag]').textContent='writing…';
+  node.scrollIntoView({block:'nearest'});
   const b = node.querySelector('[data-role=body]');
   const steer = b.querySelector('.steer-note'); const steerHtml = steer?steer.outerHTML:'';
   b.innerHTML=''; if(steerHtml) b.insertAdjacentHTML('beforeend',steerHtml);
   b.appendChild(skeletonLines(['w90','w80','w60']));
-  b.appendChild(chartSkel(sec.chart));
+  b.appendChild(chartSkel(sec));
   await sleep(skeletonMs); await waitIfPaused(); if(isCancelled()) return;
   b.innerHTML=''; if(steerHtml) b.insertAdjacentHTML('beforeend',steerHtml);
   for(const p of sec.body){
@@ -620,25 +643,53 @@ builders.hybridStream = function(){
 /* ============ 3b · AUTO-ADVANCING GATES (non-blocking countdown) ======== */
 builders.hybridGates = function(){
   const {frame, body, chat, setStatus} = makeFrame();
-  let cancelled=false; const timers=[];
+  let cancelled=false; const timers=[]; let pre=[];   // pre[i] = 'skip' | {edit} | null
   function clearTimers(){ timers.forEach(t=>{clearTimeout(t); clearInterval(t);}); timers.length=0; }
   function reset(){
-    cancelled=false; clearTimers();
+    cancelled=false; clearTimers(); pre=[];
     setStatus('','idle'); body.innerHTML='';
-    body.appendChild(el('div','micro','Each section previews with a countdown — it auto-writes unless you step in'));
-    body.appendChild(el('div','notice','A checkpoint that never blocks. While one section is being written — time you’re waiting anyway — the <strong>next</strong> section’s plan shows with a short countdown. Ignore it and it proceeds; or edit the plan, skip the section, or write-now before the timer runs out.'));
+    body.appendChild(el('div','micro','The current section counts down; you can act on any later section ahead of its turn'));
+    body.appendChild(el('div','notice','A checkpoint that never blocks. The section being written next shows a short countdown — ignore it and it proceeds. But you don’t have to wait your turn: every later section carries skip / edit too, so if you already see an issue further down, act on it now and the run honors it when it arrives.'));
     chat.setAction('Start generating', run);
   }
+  /* lightweight controls on any not-yet-written section, so the user can act out of sequence */
+  function aheadControls(node, i){
+    const b=node.querySelector('[data-role=body]'); b.innerHTML='';
+    b.appendChild(skeletonLines(['w70','w40']));
+    const g=el('div','gate ahead');
+    g.innerHTML='<span class="lbl" style="color:var(--on-surface-variant)">queued</span>';
+    const editB=el('button','btn ghost tiny','Edit'); const skipB=el('button','btn ghost tiny','Skip');
+    g.appendChild(editB); g.appendChild(skipB); node.appendChild(g);
+    skipB.onclick=()=>{ pre[i]='skip'; node.className='sec queued'; node.querySelector('[data-role=flag]').textContent='will skip';
+      b.innerHTML='<p style="font-size:12px">— will skip —</p>'; g.remove(); };
+    editB.onclick=()=>{ g.innerHTML='';
+      const inp=el('input'); inp.placeholder='queue an edit for this section…'; inp.style.cssText=INPUT_CSS;
+      const ok=el('button','btn primary tiny','Queue'); g.appendChild(inp); g.appendChild(ok); inp.focus();
+      ok.onclick=()=>{ const v=inp.value||'(noted)'; pre[i]={edit:v}; g.remove();
+        node.querySelector('[data-role=flag]').textContent='edit queued';
+        b.insertAdjacentElement('afterbegin', el('div','steer-note','<span class="k">edit queued</span><span>'+v+'</span>')); };
+    };
+  }
+  /* resolve a section's decision: honor any pre-decision instantly, else run the countdown */
+  async function decide(i){
+    const n=nodes[i];
+    if(n) n.querySelectorAll('.gate.ahead').forEach(g=>g.remove());
+    if(pre[i]==='skip') return 'skip';
+    if(pre[i] && pre[i].edit){ n.dataset.steer=pre[i].edit; return 'approve'; }
+    return await preview(nodes[i], SECTIONS[i]);
+  }
+  let nodes=[];
   /* preview the upcoming section with a live countdown; resolves 'approve' | 'skip'.
      Runs concurrently with the previous section's write, so it adds no latency. */
   function preview(node, sec){
     return new Promise(resolve=>{
       node.className='sec active';
       node.querySelector('[data-role=flag]').textContent='up next';
+      node.scrollIntoView({block:'nearest'});
       const b=node.querySelector('[data-role=body]'); b.innerHTML='';
       b.appendChild(el('div','micro','preview'));
       b.appendChild(skeletonLines(['w90','w70']));
-      b.appendChild(chartSkel(sec.chart));
+      b.appendChild(chartSkel(sec,'preview'));
       const g=el('div','gate cd-gate');
       const lbl=el('span','lbl','auto-writes when the timer ends');
       const editB=el('button','btn tiny','Edit'); const skipB=el('button','btn ghost tiny','Skip');
@@ -652,10 +703,14 @@ builders.hybridGates = function(){
       const to=setTimeout(()=>fin('approve'), CD_SECONDS*1000); timers.push(to);
       function fin(d){ if(done)return; done=true; clearInterval(tick); clearTimeout(to); g.remove(); resolve(d); }
       editB.onclick=()=>{ clearInterval(tick); clearTimeout(to);
+        // hold this section while editing — freeze its shimmer so it doesn't read as "still generating"
+        node.classList.add('paused');
+        node.querySelector('[data-role=flag]').textContent='editing';
+        const stepEl=node.querySelector('[data-role=chartstep]'); if(stepEl) stepEl.textContent='paused for your edit';
         g.innerHTML='';
         const inp=el('input'); inp.placeholder='adjust the plan for this section…'; inp.style.cssText=INPUT_CSS;
         const ok=el('button','btn primary tiny','Approve with edit'); g.appendChild(inp); g.appendChild(ok); inp.focus();
-        ok.onclick=()=>{ node.dataset.steer=inp.value||'1'; fin('approve'); };
+        ok.onclick=()=>{ node.dataset.steer=inp.value||'1'; node.classList.remove('paused'); fin('approve'); };
       };
       skipB.onclick=()=>fin('skip');
       nowB.onclick=()=>fin('approve');
@@ -666,7 +721,8 @@ builders.hybridGates = function(){
     if(decision==='skip'){ node.className='sec queued'; b.innerHTML='<p style="font-size:12px">— skipped by you —</p>'; node.querySelector('[data-role=flag]').textContent='skipped'; return; }
     node.className='sec active';
     node.querySelector('[data-role=flag]').textContent='writing…';
-    b.innerHTML=''; b.appendChild(skeletonLines(['w90','w80','w60'])); b.appendChild(chartSkel(sec.chart));
+    node.scrollIntoView({block:'nearest'});
+    b.innerHTML=''; b.appendChild(skeletonLines(['w90','w80','w60'])); b.appendChild(chartSkel(sec));
     await sleep(WRITE_MS); if(cancelled)return;
     b.innerHTML='';
     if(node.dataset.steer && node.dataset.steer!=='1') b.appendChild(el('div','steer-note','<span class="k">your edit</span><span>'+node.dataset.steer+'</span>'));
@@ -675,17 +731,18 @@ builders.hybridGates = function(){
     node.className='sec done'; node.querySelector('[data-role=flag]').textContent='';
   }
   async function run(){
-    cancelled=false; clearTimers();
+    cancelled=false; clearTimers(); pre=[];
     setStatus('live','generating'); body.innerHTML='';
-    chat.setHint('Each section auto-writes on its countdown — step in from the panel to edit or skip →');
-    const nodes = SECTIONS.map((s,i)=>{ const n=sectionNode(s,i); body.appendChild(n); return n; });
-    // preview the first section (nothing writing yet), then overlap thereafter
-    let dec = await preview(nodes[0], SECTIONS[0]); if(cancelled)return;
+    chat.setHint('The current section counts down — or skip / edit any later section right now →');
+    // render the whole outline; every section is actionable ahead of its turn
+    nodes = SECTIONS.map((s,i)=>{ const n=sectionNode(s,i); body.appendChild(n); aheadControls(n,i); return n; });
+    // decide section 0 (nothing writing yet), then overlap decision-of-next with write-of-current
+    let dec = await decide(0); if(cancelled)return;
     for(let i=0;i<SECTIONS.length;i++){
       if(cancelled)return;
       const writeP = write(nodes[i], SECTIONS[i], dec);
       if(i+1 < SECTIONS.length){
-        const [,nextDec] = await Promise.all([writeP, preview(nodes[i+1], SECTIONS[i+1])]);
+        const [,nextDec] = await Promise.all([writeP, decide(i+1)]);
         dec = nextDec;
       } else {
         await writeP;
@@ -728,12 +785,13 @@ builders.hybridInputs = function(){
       const n=nodes[i], sec=SECTIONS[i];
       n.className='sec active';
       n.querySelector('[data-role=flag]').textContent='inputs — click to exclude';
+      n.scrollIntoView({block:'nearest'});
       const b=n.querySelector('[data-role=body]');
       b.innerHTML='';
       b.appendChild(el('div','micro','facts feeding this section'));
       b.appendChild(makeToggleRow(sec,n));
       b.appendChild(skeletonLines(['w90','w70']));
-      b.appendChild(chartSkel(sec.chart));
+      b.appendChild(chartSkel(sec));
       await sleep(INPUTS_WINDOW);
       if(cancelled)return;
       const kept=[...b.querySelectorAll('.chip')].filter(c=>c.dataset.on==='1').map(c=>c.textContent.replace('×','').trim());
