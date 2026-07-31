@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design Review — Null-handling review &amp; approval</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *,*::before,*::after{box-sizing:border-box}
+  :root{
+    --ink:#1a1a1a; --muted:#6b7280; --line:#e5e5e5; --alt:#f9fafb;
+    --tray:#f3f4f6; --rail:#f9f9f8; --sketch:#f8f8f7; --green:#16a34a; --amber:#d97706;
+  }
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:#fff; color:var(--ink);
+    font-family:"Google Sans","Product Sans",Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:15px; line-height:1.65; -webkit-font-smoothing:antialiased;
+    overflow-wrap:break-word; word-wrap:break-word;
+  }
+  h1,h2,h3{line-height:1.25; margin:0}
+  h1{font-size:28px; font-weight:700; letter-spacing:-.02em}
+  h2{font-size:20px; font-weight:700; letter-spacing:-.01em; margin-bottom:14px}
+  h3{font-size:15px; font-weight:600; margin-bottom:6px}
+  p{margin:0 0 12px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.88em;
+       background:var(--tray); padding:1px 5px; border-radius:4px}
+  a{color:inherit}
+
+  /* ---------- layout ---------- */
+  .layout{display:flex}
+  .sidebar{
+    position:fixed; left:0; top:0; height:100vh; width:220px; padding:28px 0;
+    background:var(--rail); border-right:1px solid var(--line); overflow-y:auto;
+  }
+  .sidebar-title{font-size:11px; font-weight:600; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--muted); padding:0 22px; margin-bottom:14px}
+  .nav-link{
+    display:block; padding:7px 22px; font-size:13.5px; color:var(--muted); text-decoration:none;
+    border-left:2px solid transparent;
+    transition:color .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .nav-link:hover{background:var(--tray); color:var(--ink)}
+  .nav-link.active{color:var(--ink); border-left-color:var(--ink)}
+  .content{margin-left:220px; flex:1; min-width:0; padding:56px 48px 90px; max-width:1000px}
+  section{padding-top:8px; margin-bottom:52px; scroll-margin-top:24px}
+  .rule{height:1px; background:var(--line); border:0; margin:0 0 32px}
+
+  /* ---------- header ---------- */
+  .eyebrow{font-size:11px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--muted)}
+  .byline{color:var(--muted); font-size:13px; margin:10px 0 16px}
+  .chiprow{display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:18px}
+  .pill{display:inline-block; background:var(--tray); color:#374151; font-size:12px;
+        padding:4px 11px; border-radius:999px; white-space:nowrap}
+  .goal{border-left:2px solid var(--ink); padding:2px 0 2px 14px; margin:0 0 18px; font-size:15px}
+  .goal b{font-weight:600}
+  .tldr{border:1px solid var(--line); border-radius:8px; padding:16px 18px; background:var(--alt)}
+  .tldr p{margin:0}
+
+  /* ---------- status toggle ---------- */
+  .status-toggle{display:inline-flex; gap:0; padding:4px; background:var(--tray);
+    border:1px solid var(--line); border-radius:8px}
+  .status-tab{
+    font:inherit; font-size:12.5px; border:0; background:transparent; color:var(--muted);
+    padding:8px 16px; border-radius:6px; cursor:pointer;
+    transition:background .15s ease, color .15s ease;
+  }
+  .status-tab:hover{background:#e5e5e5; color:var(--ink)}
+  .status-tab.active{background:var(--ink); color:#fff; box-shadow:0 1px 2px rgba(0,0,0,.1)}
+  .status-note{font-size:12.5px; color:var(--muted); margin:8px 0 0}
+  .status-draft .note-draft,.status-in-review .note-review,.status-completed .note-done{display:block}
+  .note-draft,.note-review,.note-done{display:none}
+
+  /* ---------- decision banner ---------- */
+  .decision-banner{display:none; border:1px solid var(--ink); border-radius:8px;
+    padding:18px 20px; margin:22px 0 0; background:#fff}
+  .status-completed .decision-banner{display:block}
+  .decision-banner .dk{font-size:11px; font-weight:600; letter-spacing:.09em;
+    text-transform:uppercase; color:var(--muted)}
+  .decision-banner .dv{font-size:19px; font-weight:700; margin:4px 0 10px}
+  .why{font-size:14px; color:#374151; border:1px dashed #d4d4d4; border-radius:6px;
+       padding:9px 12px; outline:none}
+  .why:focus{border-color:var(--ink); border-style:solid}
+
+  /* ---------- generic bits ---------- */
+  ul.tight{margin:0 0 14px; padding-left:20px}
+  ul.tight li{margin-bottom:6px}
+  table{width:100%; border-collapse:collapse; margin:6px 0 14px; font-size:13.5px}
+  th,td{text-align:left; padding:10px 12px; border-bottom:1px solid var(--line);
+        vertical-align:top; word-break:break-word}
+  th{font-weight:600; font-size:12px; letter-spacing:.03em; text-transform:uppercase; color:var(--muted)}
+  tbody tr:nth-child(even){background:var(--alt)}
+  .num{font-variant-numeric:tabular-nums}
+  .badge{display:inline-block; font-size:10.5px; font-weight:600; padding:2px 8px;
+    border-radius:999px; vertical-align:middle; white-space:nowrap}
+  .badge--rec{background:rgba(22,163,74,.1); color:var(--green)}
+  .badge--amber{background:rgba(217,119,6,.1); color:var(--amber)}
+  .tablewrap{overflow-x:auto; -webkit-overflow-scrolling:touch}
+
+  /* ---------- options toggle ---------- */
+  .options-toggle{display:flex; flex-wrap:wrap; gap:0; padding:4px; background:var(--tray);
+    border:1px solid var(--line); border-radius:8px; margin-bottom:22px}
+  .option-tab{
+    flex:1 1 118px; min-width:0; text-align:center; font:inherit; font-size:12.5px;
+    border:0; background:transparent; color:var(--muted); padding:9px 8px; border-radius:6px;
+    cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    transition:background .15s ease, color .15s ease;
+  }
+  .option-tab:hover{background:#e5e5e5; color:var(--ink)}
+  .option-tab.active{background:var(--ink); color:#fff; box-shadow:0 1px 2px rgba(0,0,0,.1)}
+  .status-completed .option-tab:not(.selected){opacity:.5}
+  .option-panel{display:none}
+  .option-panel.active{display:block}
+  .option-head{display:flex; flex-wrap:wrap; gap:10px; align-items:baseline; margin-bottom:8px}
+  .option-head h3{font-size:18px; font-weight:700}
+  .tradeoffs{border-top:1px solid var(--line); margin-top:18px; padding-top:14px}
+  .tradeoffs .tk{font-size:11px; font-weight:600; letter-spacing:.09em;
+    text-transform:uppercase; color:var(--muted); margin-bottom:8px}
+  .tradeoffs ul{margin:0; padding-left:20px; font-size:14px}
+  .tradeoffs li{margin-bottom:5px}
+
+  /* ---------- wireframe frames ---------- */
+  .frame{border:1px solid #d4d4d4; border-radius:8px; overflow:hidden; background:var(--sketch);
+    max-width:100%; aspect-ratio:1440/900; display:flex; flex-direction:column}
+  .frame-bar{display:flex; align-items:center; gap:6px; padding:7px 11px; background:#fff;
+    border-bottom:1px solid var(--line); flex:none}
+  .dot{width:8px; height:8px; border-radius:50%; background:#d4d4d4; flex:none}
+  .frame-title{font-size:11px; color:#9ca3af; margin-left:8px; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap}
+  .vp{flex:1; padding:16px; overflow:hidden; display:flex; flex-direction:column; justify-content:center}
+  .cap{font-size:12.5px; color:var(--muted); margin:9px 0 0}
+
+  /* sketch primitives — grays only */
+  .sk-card{border:1px solid #d4d4d4; border-radius:8px; background:#fff; padding:11px 13px}
+  .sk-h{font-size:12px; font-weight:600; color:#374151}
+  .sk-s{font-size:11px; color:#9ca3af; line-height:1.5}
+  .sk-row{display:flex; gap:8px; align-items:center}
+  .sk-btn{border:1px solid #d4d4d4; border-radius:8px; background:#fff; font-size:10.5px;
+    color:#6b7280; padding:4px 9px; white-space:nowrap}
+  .sk-btn--dark{background:#3f3f46; border-color:#3f3f46; color:#fff}
+  .sk-btn--ghost{border-style:dashed; color:#9ca3af}
+  .sk-bar{height:9px; border-radius:3px; background:#d4d4d4}
+  .sk-bar--dark{background:#6b7280}
+  .sk-line{height:6px; border-radius:3px; background:#e5e5e5}
+  .sk-chip{display:inline-block; font-size:10px; color:#6b7280; background:#f3f4f6;
+    border:1px solid #e5e5e5; border-radius:999px; padding:2px 8px}
+  .sk-stack{display:flex; flex-direction:column; gap:9px}
+  .sk-lock{border:1px dashed #d4d4d4; border-radius:8px; background:#f3f4f6; padding:11px 13px;
+    text-align:center; color:#9ca3af; font-size:11px}
+  .sk-metric{display:flex; justify-content:space-between; align-items:center; gap:8px;
+    border-bottom:1px solid #ededed; padding:6px 0; font-size:11px; color:#6b7280}
+  .sk-metric b{color:#374151; font-weight:600}
+  .sk-metric.pick{background:#f3f4f6; border-radius:6px; padding:6px 8px; border-bottom:0}
+  .sk-2col{display:flex; gap:12px; align-items:center}
+  .sk-2col > *{flex:1; min-width:0}
+  .sk-arrow{flex:none; align-self:center; color:#9ca3af; font-size:15px}
+
+  /* ---------- feedback ---------- */
+  .sticky-grid{display:flex; flex-wrap:wrap; gap:12px}
+  .sticky{width:196px; background:#f5f5f4; border:1px solid var(--line); border-radius:8px;
+    padding:11px 12px; box-shadow:0 1px 3px rgba(0,0,0,.06); display:flex;
+    flex-direction:column; gap:8px}
+  .sticky-cat{align-self:flex-start; font-size:10px; background:#e5e5e5; color:#374151;
+    border-radius:999px; padding:2px 8px}
+  .sticky-text{font-size:12.5px; line-height:1.5; flex:1}
+  .sticky-name{font-size:11px; color:#9ca3af; text-align:right}
+  .feedback-add-btn{width:196px; min-height:104px; border:1px dashed #d4d4d4; border-radius:8px;
+    background:#fff; color:var(--muted); font:inherit; font-size:13px; cursor:pointer;
+    transition:background .15s ease, color .15s ease}
+  .feedback-add-btn:hover{background:var(--tray); color:var(--ink)}
+  .status-draft .feedback-add-btn,.status-completed .feedback-add-btn{display:none}
+  .fb-form{display:none; border:1px solid var(--line); border-radius:8px; padding:14px;
+    margin-top:14px; max-width:420px; background:var(--alt)}
+  .fb-form.open{display:block}
+  .fb-form textarea,.fb-form input{width:100%; font:inherit; font-size:13px; padding:8px 10px;
+    border:1px solid var(--line); border-radius:6px; margin-bottom:9px; background:#fff}
+  .fb-form textarea{min-height:64px; resize:vertical}
+  .fb-cats{display:flex; gap:0; padding:3px; background:var(--tray); border:1px solid var(--line);
+    border-radius:8px; margin-bottom:9px}
+  .fb-cat{flex:1; font:inherit; font-size:11.5px; border:0; background:transparent; color:var(--muted);
+    padding:6px 4px; border-radius:6px; cursor:pointer; transition:background .15s ease, color .15s ease}
+  .fb-cat.active{background:var(--ink); color:#fff}
+  .fb-save{font:inherit; font-size:13px; border:0; background:var(--ink); color:#fff;
+    padding:8px 18px; border-radius:8px; cursor:pointer}
+  .status-completed .fb-readonly{display:block}
+  .fb-readonly{display:none; font-size:12.5px; color:var(--muted); margin-bottom:12px}
+
+  footer{border-top:1px solid var(--line); margin-top:12px; padding-top:18px;
+    font-size:12px; color:#9ca3af}
+
+  /* ---------- responsive ---------- */
+  @media (max-width:900px){
+    .sidebar{display:none}
+    .content{margin-left:0; padding:34px 20px 70px; max-width:100%}
+    h1{font-size:23px}
+    .sticky,.feedback-add-btn{width:100%}
+    /* the fixed desktop viewport can't hold a sketch at phone width — let it grow */
+    .frame{aspect-ratio:auto}
+    .vp{overflow:visible}
+    .sk-2col{flex-direction:column; align-items:stretch}
+    .sk-arrow{transform:rotate(90deg); align-self:center}
+    .option-tab{flex:1 1 46%}
+  }
+  @media print{
+    .sidebar,.feedback-add-btn,.fb-form,.status-toggle{display:none}
+    .content{margin-left:0; max-width:100%}
+    .option-panel{display:block !important; page-break-inside:avoid; margin-bottom:26px}
+    .options-toggle{display:none}
+  }
+</style>
+</head>
+<body class="status-draft">
+<div class="layout">
+
+  <nav class="sidebar">
+    <div class="sidebar-title">Contents</div>
+    <a href="#problem"  class="nav-link active">Problem</a>
+    <a href="#constraints" class="nav-link">Constraints</a>
+    <a href="#options" class="nav-link">Options</a>
+    <a href="#comparison" class="nav-link">Comparison</a>
+    <a href="#recommendation" class="nav-link">Recommendation</a>
+    <a href="#open-questions" class="nav-link">Open Questions</a>
+    <a href="#feedback" class="nav-link">Feedback</a>
+  </nav>
+
+  <main class="content">
+
+    <!-- ================= HEADER ================= -->
+    <header>
+      <div class="eyebrow">Design Review · FlowDash DS-Agent</div>
+      <h1>How Maya reviews &amp; approves null handling</h1>
+      <div class="byline">Ashley · Created Jul 31, 2026 · Updated Jul 31, 2026</div>
+
+      <div class="chiprow">
+        <span class="pill">Early Exploration</span>
+        <span class="pill">Stage ① Data cleaning</span>
+        <span class="pill">Read-only vs write seam</span>
+      </div>
+
+      <p class="goal"><b>Decision this review drives:</b> which null-handling review surface
+      we prototype first — and whether approval is per-run, per-policy, or after-the-fact.</p>
+
+      <div>
+        <div class="status-toggle" role="tablist" aria-label="Review status">
+          <button class="status-tab active" data-status="draft">Draft</button>
+          <button class="status-tab" data-status="in-review">In Review</button>
+          <button class="status-tab" data-status="completed">Completed</button>
+        </div>
+        <p class="status-note note-draft">This review is still being written. Feedback section is disabled.</p>
+        <p class="status-note note-review">Feedback is open — add your thoughts below.</p>
+        <p class="status-note note-done">Decision recorded. Feedback is read-only.</p>
+      </div>
+
+      <div class="decision-banner">
+        <div class="dk">Decision</div>
+        <div class="dv" id="decision-value">Option 2 — Consequence preview</div>
+        <div class="why" contenteditable="true">Why: [click to type the one-line rationale for the record]</div>
+      </div>
+
+      <div class="tldr" style="margin-top:22px">
+        <p><b>TL;DR —</b> Null handling is the only cleaning fix with no correct default, so the
+        review surface can't ask <i>“do you approve my fix?”</i> It has to ask
+        <i>“which answer are you willing to defend?”</i> Seven surfaces below;
+        I recommend <b>Option 2 (consequence preview)</b> — approve the number, not the method.</p>
+      </div>
+    </header>
+
+    <hr class="rule" style="margin-top:44px">
+
+    <!-- ================= PROBLEM ================= -->
+    <section id="problem">
+      <h2>Problem</h2>
+      <ul class="tight">
+        <li><b>Every other cleaning fix has a right answer Maya is merely ratifying. Nulls don't.</b>
+          Drop, fill, and flag-and-keep produce <i>different answers from the same data</i>.</li>
+        <li>Real case in <code>data/sample_customers.csv</code>: <b>62 nulls in
+          <code>monthly_spend</code> (5.1%) — 100% of them are <code>plan='free'</code></b>,
+          while free is only 62% of all rows. Textbook structured missingness.</li>
+        <li>Those 62 churn at <b class="num">64.5%</b> vs <b class="num">52.8%</b> overall.
+          Dropping them quietly deletes the most at-risk segment.</li>
+        <li><b>The agent cannot resolve it alone.</b> Whether free-plan spend is <i>genuinely $0</i>
+          or <i>merely unrecorded</i> is a business fact, not a statistical one.</li>
+        <li><b>Why now:</b> <code>profiler.py</code> already diagnoses the mechanism and silently
+          picks a fix. The diagnosis has no surface — so today the choice is invisible.</li>
+      </ul>
+
+      <h3 style="margin-top:22px">What each strategy silently asserts</h3>
+      <div class="tablewrap">
+      <table>
+        <thead><tr><th>Strategy</th><th>Asserts</th><th>Damage</th></tr></thead>
+        <tbody>
+          <tr><td>Drop the rows</td><td>“Free-plan churners aren't part of the population”</td>
+              <td>Removes a segment churning at 64.5%</td></tr>
+          <tr><td>Fill median ($21.17)</td><td>“Free users pay $21/mo”</td>
+              <td>Invents $1,313/mo of revenue</td></tr>
+          <tr><td>Fill 0</td><td>“Free means zero spend”</td>
+              <td>Probably right — but it's a <i>business</i> fact</td></tr>
+          <tr><td>Flag &amp; keep</td><td>“We don't know; carry it forward”</td>
+              <td>Safe; defers the decision downstream</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+
+    <hr class="rule">
+
+    <!-- ================= CONSTRAINTS ================= -->
+    <section id="constraints">
+      <h2>Constraints &amp; known decisions</h2>
+      <div class="tablewrap">
+      <table>
+        <thead><tr><th style="width:150px">Type</th><th>Constraint</th></tr></thead>
+        <tbody>
+          <tr><td>Known decision</td><td>Detection stays autonomous (read-only); every <b>write</b> is gated. Non-negotiable — it's iron rule #3.</td></tr>
+          <tr><td>Known decision</td><td>Fixes are non-destructive. <code>profiler.apply_fixes()</code> returns a cleaned copy and never mutates the source.</td></tr>
+          <tr><td>Technical</td><td>Options 2 &amp; 5 need one new capability: apply candidate fixes and <b>re-run the downstream metric for each</b>. Doesn't exist yet.</td></tr>
+          <tr><td>Technical</td><td>Options 1, 4, 6 are presentation layers over data <code>profiler.py</code> already returns (<code>_missingness_diagnosis</code>, <code>fix_label</code>, <code>impact</code>).</td></tr>
+          <tr><td>Technical</td><td>Option 7 requires prep decisions stored as replayable parameters, not a one-shot model choice.</td></tr>
+          <tr><td>Scope</td><td>The SQL path (<code>data_dictionary.md</code> clean recipe) must end up consistent with the profiler path, or we teach Maya two contradictory habits.</td></tr>
+          <tr><td>Audience</td><td>Maya can't write SQL and shouldn't need imputation vocabulary. Any surface that requires it has already failed.</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+
+    <hr class="rule">
+
+    <!-- ================= OPTIONS ================= -->
+    <section id="options">
+      <h2>Options</h2>
+      <p style="color:var(--muted); font-size:14px; margin-bottom:10px">
+        Ordered by how far each moves <i>what</i> the user is approving — from a method (1) to
+        a number (2) to a fact (3) to nothing-up-front (7).</p>
+      <p style="color:var(--muted); font-size:13px; margin-bottom:16px; border-left:2px solid var(--line); padding-left:12px">
+        <b>On the figures:</b> every <code>monthly_spend</code> number in these wireframes is real,
+        computed from <code>data/sample_customers.csv</code>. It's the <i>only</i> column in that
+        file with nulls — so other columns shown in the sketches
+        (<code>tenure_months</code>, <code>gender</code>) are illustrative, standing in for the
+        multi-column case.</p>
+
+      <div class="options-toggle" role="tablist">
+        <button class="option-tab active" data-option="1">1 · Triage cards</button>
+        <button class="option-tab selected" data-option="2">2 · Consequence ★</button>
+        <button class="option-tab" data-option="3">3 · Business Q</button>
+        <button class="option-tab" data-option="4">4 · Why-gate</button>
+        <button class="option-tab" data-option="5">5 · Sensitivity</button>
+        <button class="option-tab" data-option="6">6 · Standing policy</button>
+        <button class="option-tab" data-option="7">7 · Provisional</button>
+      </div>
+
+      <!-- ---- 1 ---- -->
+      <div class="option-panel active" id="option-1">
+        <div class="option-head"><h3>Option 1 — Per-column triage cards</h3>
+          <span class="pill">The floor</span></div>
+        <ul class="tight">
+          <li>Extends the existing <code>components.py cleaning</code> panel: one card per affected column.</li>
+          <li>Sorted by how much the choice moves the answer; reuses the “▸ Show the evidence” disclosure.</li>
+          <li>Approve / Choose a different fix / Skip — per column, never all-or-nothing.</li>
+        </ul>
+        <div class="frame">
+          <div class="frame-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            <span class="frame-title">Missing values · approval required</span></div>
+          <div class="vp">
+            <div class="sk-stack">
+              <div class="sk-card">
+                <div class="sk-row" style="justify-content:space-between">
+                  <div class="sk-h">monthly_spend — 62 missing (5.1%)</div>
+                  <span class="sk-chip">high impact</span>
+                </div>
+                <div class="sk-s" style="margin-top:5px">Every one of them is a free-plan customer.<br>
+                  Proposed: keep the rows, add <b>monthly_spend__missing</b> · 0 rows removed, 1 column added</div>
+                <div class="sk-row" style="margin-top:9px">
+                  <span class="sk-btn sk-btn--dark">Approve</span>
+                  <span class="sk-btn">Choose a different fix ▾</span>
+                  <span class="sk-btn">Show the 62</span>
+                  <span class="sk-btn sk-btn--ghost">▸ Show the evidence</span>
+                </div>
+              </div>
+              <div class="sk-card">
+                <div class="sk-row" style="justify-content:space-between">
+                  <div class="sk-h">tenure_months — 9 missing (0.7%)</div>
+                  <span class="sk-chip">low impact</span>
+                </div>
+                <div class="sk-s" style="margin-top:5px">Spread evenly across plans and regions.
+                  Proposed: fill with the column median.</div>
+                <div class="sk-row" style="margin-top:9px">
+                  <span class="sk-btn sk-btn--dark">Approve</span>
+                  <span class="sk-btn">Choose a different fix ▾</span>
+                  <span class="sk-btn sk-btn--ghost">Skip</span>
+                </div>
+              </div>
+              <div class="sk-s">Detection is automatic. Nothing is written until you approve — per column.</div>
+            </div>
+          </div>
+        </div>
+        <p class="cap">One card per column, grouped by mechanism, with the impact stated in rows and columns — never a wall of nulls.</p>
+        <div class="tradeoffs"><div class="tk">Trade-offs</div>
+          <ul>
+            <li>Gives us <b>consistency</b> with the pattern Maya already learned in stage ① — but costs her <b>vocabulary she doesn't own</b> (“flag-and-keep”).</li>
+            <li>Gives us the <b>smallest build</b> (pure presentation over existing data) — but leaves the agent's recommendation <b>authoritative rather than checkable</b>.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- ---- 2 ---- -->
+      <div class="option-panel" id="option-2">
+        <div class="option-head"><h3>Option 2 — Approve the consequence, not the method</h3>
+          <span class="badge badge--rec">Recommended</span></div>
+        <ul class="tight">
+          <li>Compute the metric Maya actually asked for <b>under every candidate strategy</b>.</li>
+          <li>She picks the answer she's willing to defend. No imputation vocabulary required.</li>
+          <li>The spread is the headline — when strategies agree, the debate is visibly moot.</li>
+        </ul>
+        <div class="frame">
+          <div class="frame-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            <span class="frame-title">“What's our average revenue per customer?”</span></div>
+          <div class="vp">
+            <div class="sk-s" style="margin-bottom:9px">Depending on how I handle the 62 missing
+              <b>monthly_spend</b> values:</div>
+            <div class="sk-card">
+              <div class="sk-metric"><span>Drop those rows</span>
+                <span><b>ARPU $42.29</b> &nbsp;⚠ also drops them from every other number</span></div>
+              <div class="sk-metric"><span>Fill with median $21</span>
+                <span><b>ARPU $41.21</b> &nbsp;⚠ invents $1,313/mo of revenue</span></div>
+              <div class="sk-metric"><span>Fill with 0</span>
+                <span><b>ARPU $40.13</b> &nbsp;✓ if “free” really means zero spend</span></div>
+              <div class="sk-metric pick"><span>Flag &amp; keep &nbsp;<span class="sk-chip">my rec.</span></span>
+                <span><b>ARPU $42.29</b> &nbsp;✓ the 62 stay in the data</span></div>
+            </div>
+            <div class="sk-s" style="margin-top:9px"><b>$2.16 between highest and lowest — about 5%.
+              Worth your 20 seconds.</b></div>
+            <div class="sk-row" style="margin-top:9px">
+              <span class="sk-btn sk-btn--dark">Go with flag &amp; keep</span>
+              <span class="sk-btn">Use fill-with-0</span>
+              <span class="sk-btn">Show me the 62</span>
+            </div>
+          </div>
+        </div>
+        <p class="cap">Maya reviews in the only currency she's fluent in — the metric. The agent's pick becomes checkable, not authoritative.</p>
+        <div class="tradeoffs"><div class="tk">Trade-offs</div>
+          <ul>
+            <li>Gives us the <b>lowest trust gap of any option</b> — but costs N× compute (one metric run per strategy). On FlowDash-sized data, free.</li>
+            <li>Gives us an <b>honest view of when the choice doesn't matter</b> — the same nulls move churn only 0.6pt (52.2% → 52.8%) — but needs the downstream metric known at prep time.</li>
+            <li>Converts an unanswerable question into an answerable one — but <b>can't be a static card</b>; it needs a compare view.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- ---- 3 ---- -->
+      <div class="option-panel" id="option-3">
+        <div class="option-head"><h3>Option 3 — Ask the business question, not the statistics question</h3></div>
+        <ul class="tight">
+          <li>Nulls are usually a business fact wearing a statistics costume.</li>
+          <li>The agent asks the domain question and translates the answer into the fix itself.</li>
+          <li>“Not sure” is a first-class answer mapped to the conservative fix.</li>
+        </ul>
+        <div class="frame">
+          <div class="frame-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            <span class="frame-title">Clarify before treating</span></div>
+          <div class="vp">
+            <div class="sk-card" style="margin-bottom:11px">
+              <div class="sk-s">62 customers have no <b>monthly_spend</b> — and all 62 are on the free plan.
+                Before I pick a treatment: <b>does free-plan spend get recorded as $0, or is it just
+                not tracked for free users?</b></div>
+            </div>
+            <div class="sk-stack">
+              <div class="sk-card"><div class="sk-row"><span>○</span>
+                <div><div class="sk-h">Free users genuinely spend $0</div>
+                <div class="sk-s">I'll fill 0. Revenue metrics stay honest.</div></div></div></div>
+              <div class="sk-card"><div class="sk-row"><span>○</span>
+                <div><div class="sk-h">It's tracked, but missing here</div>
+                <div class="sk-s">I'll flag &amp; keep. I won't guess a value.</div></div></div></div>
+              <div class="sk-card"><div class="sk-row"><span>○</span>
+                <div><div class="sk-h">Not sure</div>
+                <div class="sk-s">I'll flag &amp; keep, and note the ambiguity in every report
+                  that touches spend.</div></div></div></div>
+            </div>
+          </div>
+        </div>
+        <p class="cap">Maya isn't ratifying the agent's judgment — she's supplying the one fact it structurally lacks.</p>
+        <div class="tradeoffs"><div class="tk">Trade-offs</div>
+          <ul>
+            <li>Gives us the <b>honest division of labour</b> (agent brings the scan, human brings the domain) — but costs an <b>interruption every time</b>.</li>
+            <li>Gives us a <b>fully deterministic result</b> — the answer <i>is</i> the rule, and it's reusable — but only scales if something decides <i>which</i> columns are worth asking about (see Option 5).</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- ---- 4 ---- -->
+      <div class="option-panel" id="option-4">
+        <div class="option-head"><h3>Option 4 — The why-gate: no fix offered until the mechanism is shown</h3></div>
+        <ul class="tight">
+          <li>Screen 1 is the <b>diagnosis</b>, with no Approve button on it at all.</li>
+          <li>Treatment options unlock only after Maya has seen why the values are absent.</li>
+          <li>Reserved for <code>pattern: structured</code>; diffuse cases skip straight to Option 1.</li>
+        </ul>
+        <div class="frame">
+          <div class="frame-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            <span class="frame-title">Why these values are missing → then the options</span></div>
+          <div class="vp">
+            <div class="sk-2col">
+              <div class="sk-card">
+                <div class="sk-h" style="margin-bottom:9px">Why these values are missing</div>
+                <div style="display:flex; flex-direction:column; gap:7px">
+                  <div class="sk-row"><span class="sk-s" style="width:38px">free</span>
+                    <div class="sk-bar sk-bar--dark" style="flex:1"></div>
+                    <span class="sk-s">62 / 62</span></div>
+                  <div class="sk-row"><span class="sk-s" style="width:38px">pro</span>
+                    <div class="sk-line" style="width:3px"></div><span class="sk-s">0</span></div>
+                  <div class="sk-row"><span class="sk-s" style="width:38px">team</span>
+                    <div class="sk-line" style="width:3px"></div><span class="sk-s">0</span></div>
+                </div>
+                <div class="sk-s" style="margin-top:10px">Free plan is <b>62%</b> of all customers
+                  but <b>100%</b> of the missing. This is <b>not random</b>. These 62 churn at
+                  64.5% vs 52.8% overall — dropping them quietly removes your most at-risk segment.</div>
+                <div class="sk-row" style="margin-top:10px; justify-content:flex-end">
+                  <span class="sk-btn sk-btn--dark">Got it — show the options →</span></div>
+              </div>
+              <span class="sk-arrow">→</span>
+              <div>
+                <div class="sk-lock" style="margin-bottom:9px">🔒 Options locked<br>
+                  <span style="font-size:10px">until the diagnosis is seen</span></div>
+                <div class="sk-card" style="opacity:.45">
+                  <div class="sk-s">○ Drop &nbsp; ○ Fill median &nbsp; ○ Fill 0 &nbsp; ○ Flag &amp; keep</div>
+                  <div class="sk-row" style="margin-top:9px"><span class="sk-btn">Approve</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="cap">Deliberate friction where the analysis is fragile — the failure mode with nulls is a confident wrong answer accepted in one click.</p>
+        <div class="tradeoffs"><div class="tk">Trade-offs</div>
+          <ul>
+            <li>Gives us a <b>takeover point while the framing is still open</b> (“that's wrong, free users <i>do</i> get billed”) — but costs <b>two screens per column</b>.</li>
+            <li>Gives us an auditable diagnosis — but the <code>structured/diffuse/too_few</code> label is a <b>heuristic</b>, so its thresholds (share ≥70%, ≥25pt over baseline, n ≥20) must be <b>on screen</b>, not hidden in the code.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- ---- 5 ---- -->
+      <div class="option-panel" id="option-5">
+        <div class="option-head"><h3>Option 5 — Sensitivity gate: only interrupt when the choice changes the answer</h3></div>
+        <ul class="tight">
+          <li>Run the metric under every strategy; compare the spread against a tolerance.</li>
+          <li>Under tolerance → the agent decides and footnotes it. Over → full approval card.</li>
+          <li>Same knob as the alert threshold: <i>the threshold is the etiquette of autonomy</i>.</li>
+        </ul>
+        <div class="frame">
+          <div class="frame-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            <span class="frame-title">Same nulls · two questions · two behaviours</span></div>
+          <div class="vp">
+            <div class="sk-2col">
+              <div class="sk-card">
+                <span class="sk-chip">under tolerance → decide</span>
+                <div class="sk-h" style="margin-top:9px">Churn rate — 52.8%</div>
+                <div class="sk-s" style="margin-top:5px">Spread across all 4 strategies:
+                  <b>0.6pt</b> (52.2% … 52.8%)</div>
+                <div class="sk-lock" style="margin-top:10px; text-align:left">
+                  ⓘ 1 null decision made automatically — no strategy moves this number
+                  by more than 0.6pt. <b>[review]</b></div>
+              </div>
+              <span class="sk-arrow">·</span>
+              <div class="sk-card">
+                <span class="sk-chip">over tolerance → ask</span>
+                <div class="sk-h" style="margin-top:9px">ARPU — needs your call</div>
+                <div class="sk-s" style="margin-top:5px">Spread across all 4 strategies:
+                  <b>$2.16 (~5%)</b></div>
+                <div class="sk-metric" style="margin-top:8px"><span>Drop</span><b>$42.29</b></div>
+                <div class="sk-metric"><span>Fill median</span><b>$41.21</b></div>
+                <div class="sk-metric"><span>Fill 0</span><b>$40.13</b></div>
+                <div class="sk-row" style="margin-top:9px">
+                  <span class="sk-btn sk-btn--dark">Review the options</span></div>
+              </div>
+            </div>
+            <div class="sk-s" style="margin-top:11px">Same column, same nulls — the
+              <b>question</b> decides whether your attention is owed.</div>
+          </div>
+        </div>
+        <p class="cap">Approving 11 identical-outcome decisions to reach the one that matters is how approval fatigue kills a gate.</p>
+        <div class="tradeoffs"><div class="tk">Trade-offs</div>
+          <ul>
+            <li>Gives us the <b>lowest interrupt cost</b> and spends Maya's attention only where it changes something — but costs the <b>guarantee</b> that she saw every decision.</li>
+            <li>Gives us a deterministic rule over probabilistic inputs (clean fit for a settings UI) — but <b>requires the downstream metric at prep time</b>, so it works for question-driven prep, not standalone pipeline runs.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- ---- 6 ---- -->
+      <div class="option-panel" id="option-6">
+        <div class="option-head"><h3>Option 6 — Standing policy, ratified once</h3></div>
+        <ul class="tight">
+          <li>Per-run approval can't work for a digest that runs while Maya is asleep.</li>
+          <li>She ratifies a short policy sheet once; the agent applies it and logs every run.</li>
+          <li>Rule 5 is the escape hatch: anything uncovered still comes to her.</li>
+        </ul>
+        <div class="frame">
+          <div class="frame-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            <span class="frame-title">Null policy · approve once, applies every run</span></div>
+          <div class="vp">
+            <div class="sk-card">
+              <div class="sk-h" style="margin-bottom:9px">My default null policy</div>
+              <div class="sk-stack" style="gap:6px">
+                <div class="sk-s">☑ <b>1.</b> Structured missingness (concentrated in one segment)
+                  → <b>flag &amp; keep, never drop</b></div>
+                <div class="sk-s">☑ <b>2.</b> Diffuse and &lt; 5% of rows → <b>fill</b> (median / mode)</div>
+                <div class="sk-s">☑ <b>3.</b> Diffuse and ≥ 5% → <b>flag &amp; keep</b></div>
+                <div class="sk-s">☑ <b>4.</b> &gt; 40% of a column missing → <b>drop the column</b>, tell you</div>
+                <div class="sk-s">☑ <b>5.</b> Anything outside these → <b>ask you</b></div>
+              </div>
+              <div class="sk-row" style="margin-top:11px">
+                <span class="sk-btn sk-btn--dark">Approve policy</span>
+                <span class="sk-btn">Edit a rule</span>
+              </div>
+            </div>
+            <div class="sk-lock" style="margin-top:10px; text-align:left">
+              Every run links the decisions it made → <b>Mon Jul 27 digest: 3 decisions [view]</b></div>
+          </div>
+        </div>
+        <p class="cap">Trust shifts from per-decision to institutional: Maya trusts the policy, and the policy's track record.</p>
+        <div class="tradeoffs"><div class="tk">Trade-offs</div>
+          <ul>
+            <li>Gives us the <b>only option that survives unattended runs</b> — but silent application is exactly the failure mode iron rule “never silently clean” warns about.</li>
+            <li>Gives us a <b>diffable config</b> (a policy change becomes a reviewable event) — but is <b>only safe paired with a visible, clickable decision log</b> on every output.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- ---- 7 ---- -->
+      <div class="option-panel" id="option-7">
+        <div class="option-head"><h3>Option 7 — Provisional apply with one-click revert</h3></div>
+        <ul class="tight">
+          <li>Don't block the answer. Apply the recommended default and keep Maya's flow intact.</li>
+          <li>A persistent chip rides every artifact the decision touched; changing it recomputes in place.</li>
+          <li>Freeze and require explicit approval once the result leaves the session.</li>
+        </ul>
+        <div class="frame">
+          <div class="frame-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            <span class="frame-title">Answer first · approval stays available</span></div>
+          <div class="vp">
+            <div class="sk-2col">
+              <div class="sk-card">
+                <div class="sk-s">Average revenue per customer</div>
+                <div style="font-size:26px; font-weight:700; color:#374151; margin:3px 0 8px">$42.29</div>
+                <div class="sk-lock" style="text-align:left">ⓘ 3 null-handling decisions applied
+                  · <b>[review &amp; change]</b></div>
+                <div class="sk-s" style="margin-top:9px">Nothing was blocked. Nothing was hidden.</div>
+              </div>
+              <span class="sk-arrow">→</span>
+              <div class="sk-card">
+                <div class="sk-h">Reopened</div>
+                <div class="sk-metric" style="margin-top:7px"><span>monthly_spend</span>
+                  <b>flag &amp; keep ▾</b></div>
+                <div class="sk-metric"><span>tenure_months</span><b>fill median ▾</b></div>
+                <div class="sk-metric"><span>gender</span><b>flag &amp; keep ▾</b></div>
+                <div class="sk-s" style="margin-top:9px">Changing any of these recomputes the number
+                  <b>and every chart derived from it</b>, in place.</div>
+                <div class="sk-row" style="margin-top:9px">
+                  <span class="sk-btn sk-btn--ghost">Frozen once exported or shared</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="cap">Trades the gate for reversibility — defensible only because null handling is non-destructive by construction.</p>
+        <div class="tradeoffs"><div class="tk">Trade-offs</div>
+          <ul>
+            <li>Gives us <b>zero interruption</b> and a takeover point that's <b>always available</b> rather than offered once — but a number Maya already pasted into Slack can <b>change underneath her</b>.</li>
+            <li>Gives us flow — but demands a <b>replayable prep step</b>: the decision must be a stored parameter, not something the model re-decides on recompute.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <hr class="rule">
+
+    <!-- ================= COMPARISON ================= -->
+    <section id="comparison">
+      <h2>Comparison</h2>
+      <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Dimension</th><th>1 Triage</th><th>2 Consequence</th><th>3 Business Q</th>
+              <th>4 Why-gate</th><th>5 Sensitivity</th><th>6 Policy</th><th>7 Provisional</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><b>What she approves</b></td><td>A method</td><td>A number</td><td>A domain fact</td>
+              <td>A diagnosis</td><td>A tolerance</td><td>A rule</td><td>Nothing up front</td></tr>
+          <tr><td><b>Trust gap</b></td><td>Low</td><td>Lowest</td><td>None — she supplies it</td>
+              <td>Raised on purpose</td><td>Low</td><td>Institutional</td><td>Deferred</td></tr>
+          <tr><td><b>Interrupt cost</b></td><td>Medium</td><td>Medium</td><td>High</td>
+              <td>High</td><td>Lowest</td><td>Amortised</td><td>None</td></tr>
+          <tr><td><b>Works unattended</b></td><td>No</td><td>No</td><td>No</td>
+              <td>No</td><td>Partly</td><td><b>Yes</b></td><td>Partly</td></tr>
+          <tr><td><b>Build on today's code</b></td><td>Presentation only</td><td>Needs metric re-run</td>
+              <td>Presentation only</td><td>Presentation only</td><td>Needs metric re-run</td>
+              <td>Needs policy store + log</td><td>Needs replayable prep</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p style="font-size:13px; color:var(--muted)">Every row above splits the options.
+      Dimensions where they'd score the same (accuracy, non-destructiveness) are omitted —
+      those are already settled by the constraints.</p>
+    </section>
+
+    <hr class="rule">
+
+    <!-- ================= RECOMMENDATION ================= -->
+    <section id="recommendation">
+      <h2>Recommendation</h2>
+      <div class="tablewrap">
+      <table>
+        <thead><tr><th style="width:44%">If our goal is…</th><th>Best option</th></tr></thead>
+        <tbody>
+          <tr><td>Closing the trust gap for a non-technical user</td><td><b>2 — Consequence preview</b></td></tr>
+          <tr><td>Protecting Maya's attention budget</td><td>5 — Sensitivity gate</td></tr>
+          <tr><td>Shipping something this sprint</td><td>1 — Triage cards</td></tr>
+          <tr><td>Making the weekly digest safe to run unattended</td><td>6 — Standing policy</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <p><b>My recommendation: Option 2.</b> It's the only one that stops requiring Maya to have
+      an opinion about imputation, and it makes the agent's recommendation <i>checkable</i> instead
+      of authoritative — the same move the key-driver evidence disclosure made for confidence scores.</p>
+
+      <p style="margin-bottom:6px"><b>They compose rather than compete:</b></p>
+      <p style="color:#374151; border-left:2px solid var(--line); padding-left:14px">
+        <b>5</b> decides whether to ask → <b>4</b> shows why before offering a fix →
+        <b>2</b> asks in the currency of the answer → <b>3</b> escalates to a plain-English
+        business question when the mechanism is structured → <b>6</b> remembers the outcome as a
+        rule → <b>7</b> keeps it reversible afterwards.</p>
+
+      <ul class="tight" style="margin-top:16px">
+        <li><b>Confidence:</b> <span class="badge badge--rec">Strong</span> on Option 2 as the
+          centrepiece; <span class="badge badge--amber">Genuinely torn</span> on whether 5 or 6
+          is the right second build.</li>
+        <li><b>Reversal trigger:</b> if prep turns out to run mostly <i>unattended</i> (digests,
+          schedules) rather than question-driven, Option 2 loses its footing — it needs a known
+          downstream metric — and <b>Option 6 becomes the centrepiece</b> instead.</li>
+      </ul>
+    </section>
+
+    <hr class="rule">
+
+    <!-- ================= OPEN QUESTIONS ================= -->
+    <section id="open-questions">
+      <h2>Open questions</h2>
+      <div class="tablewrap">
+      <table>
+        <thead><tr><th style="width:62%">Question</th><th>Priority</th></tr></thead>
+        <tbody>
+          <tr><td>Do free-plan customers genuinely spend $0, or is spend simply not recorded for them?
+            The literal Option 3 question — and it decides the right fix for our own sample data.</td>
+            <td><b>Blocking</b> — every option's example depends on it</td></tr>
+          <tr><td>Is prep question-driven (we know the metric) or pipeline-driven (we don't)?</td>
+            <td><b>Blocking</b> — decides whether Option 2 or 6 leads</td></tr>
+          <tr><td>What tolerance makes a null decision worth interrupting for — 1pt? 5%? Metric-relative?</td>
+            <td><b>Blocking</b> — it's the whole interface of Option 5</td></tr>
+          <tr><td>Does the SQL cleaning path adopt the same surface, or stay recipe-based?</td>
+            <td>Later — but the two must not contradict</td></tr>
+          <tr><td>Should the decision log be per-run, or a single running ledger Maya can audit?</td>
+            <td>Later — matters once Option 6 exists</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+
+    <hr class="rule">
+
+    <!-- ================= FEEDBACK ================= -->
+    <section id="feedback">
+      <h2>Feedback</h2>
+      <p class="fb-readonly">This decision is closed. Notes below remain as a record.</p>
+      <div class="sticky-grid" id="sticky-grid">
+        <div class="sticky">
+          <span class="sticky-cat">Support</span>
+          <div class="sticky-text">Option 2 is the right call — “approve the number” is the only
+            framing that survives contact with a non-technical user.</div>
+          <div class="sticky-name">[Team Member]</div>
+        </div>
+        <div class="sticky">
+          <span class="sticky-cat">Question</span>
+          <div class="sticky-text">If churn only moves 0.6pt, do we even show the panel? Or is that
+            exactly what Option 5 is for?</div>
+          <div class="sticky-name">[Team Member]</div>
+        </div>
+        <button class="feedback-add-btn" id="add-btn">+ Add</button>
+      </div>
+
+      <div class="fb-form" id="fb-form">
+        <textarea id="fb-text" placeholder="Your feedback…"></textarea>
+        <div class="fb-cats" id="fb-cats">
+          <button class="fb-cat active" data-cat="Concern">Concern</button>
+          <button class="fb-cat" data-cat="Question">Question</button>
+          <button class="fb-cat" data-cat="Support">Support</button>
+          <button class="fb-cat" data-cat="Suggestion">Suggestion</button>
+        </div>
+        <input id="fb-name" type="text" placeholder="Your name">
+        <button class="fb-save" id="fb-save">Save</button>
+      </div>
+    </section>
+
+    <footer>Generated for the FlowDash DS-Agent design review · stage ① data cleaning ·
+      figures computed from <code>data/sample_customers.csv</code> (1,215 rows)</footer>
+  </main>
+</div>
+
+<script>
+(function () {
+  /* ---------- status toggle ---------- */
+  var statusBtns = document.querySelectorAll('.status-tab');
+  statusBtns.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      statusBtns.forEach(function (b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      document.body.className = document.body.className
+        .replace(/status-[\w-]+/g, '').trim() + ' status-' + btn.dataset.status;
+    });
+  });
+
+  /* ---------- options toggle ---------- */
+  var tabs = document.querySelectorAll('.option-tab');
+  tabs.forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      tabs.forEach(function (t) { t.classList.remove('active'); });
+      document.querySelectorAll('.option-panel').forEach(function (p) { p.classList.remove('active'); });
+      tab.classList.add('active');
+      document.getElementById('option-' + tab.dataset.option).classList.add('active');
+    });
+  });
+
+  /* ---------- scroll-spy ---------- */
+  var sections = document.querySelectorAll('section[id]');
+  var navLinks = document.querySelectorAll('.nav-link');
+  var scrolling = false;
+  var visible = new Set();
+
+  function updateActiveNav() {
+    if (scrolling) return;
+    var topSection = null, topOffset = Infinity;
+    visible.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) {
+        var t = el.getBoundingClientRect().top;
+        if (t < topOffset) { topOffset = t; topSection = id; }
+      }
+    });
+    if (topSection) {
+      navLinks.forEach(function (l) { l.classList.remove('active'); });
+      var active = document.querySelector('.nav-link[href="#' + topSection + '"]');
+      if (active) active.classList.add('active');
+    }
+  }
+
+  var observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) visible.add(e.target.id); else visible.delete(e.target.id);
+    });
+    updateActiveNav();
+  }, { rootMargin: '-10% 0px -60% 0px', threshold: 0 });
+  sections.forEach(function (s) { observer.observe(s); });
+
+  navLinks.forEach(function (link) {
+    link.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      var id = link.getAttribute('href').slice(1);
+      var el = document.getElementById(id);
+      if (!el) return;
+      navLinks.forEach(function (l) { l.classList.remove('active'); });
+      link.classList.add('active');
+      scrolling = true;
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setTimeout(function () { scrolling = false; updateActiveNav(); }, 800);
+    });
+  });
+
+  /* ---------- feedback ---------- */
+  var addBtn = document.getElementById('add-btn');
+  var form = document.getElementById('fb-form');
+  var grid = document.getElementById('sticky-grid');
+  var cat = 'Concern';
+
+  addBtn.addEventListener('click', function () { form.classList.toggle('open'); });
+  document.querySelectorAll('.fb-cat').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('.fb-cat').forEach(function (x) { x.classList.remove('active'); });
+      b.classList.add('active');
+      cat = b.dataset.cat;
+    });
+  });
+  document.getElementById('fb-save').addEventListener('click', function () {
+    var text = document.getElementById('fb-text').value.trim();
+    if (!text) return;
+    var name = document.getElementById('fb-name').value.trim() || 'Anonymous';
+    var note = document.createElement('div');
+    note.className = 'sticky';
+    var c = document.createElement('span'); c.className = 'sticky-cat'; c.textContent = cat;
+    var t = document.createElement('div'); t.className = 'sticky-text'; t.textContent = text;
+    var n = document.createElement('div'); n.className = 'sticky-name'; n.textContent = name;
+    note.appendChild(c); note.appendChild(t); note.appendChild(n);
+    grid.insertBefore(note, addBtn);
+    document.getElementById('fb-text').value = '';
+    form.classList.remove('open');
+  });
+})();
+</script>
+</body>
+</html>
