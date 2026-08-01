@@ -11,6 +11,7 @@ Usage:
     python tools/components.py key-driver     # -> reports/card_key_driver.html
     python tools/components.py alert          # -> reports/card_alert.html
     python tools/components.py cleaning       # -> reports/panel_cleaning.html
+    python tools/components.py spectrum       # -> reports/spectrum_data_prep.html
     python tools/components.py all
 """
 import base64
@@ -213,7 +214,125 @@ def panel_cleaning():
     return _write("panel_cleaning.html", _page("Cleaning — approvals", body))
 
 
-BUILDERS = {"key-driver": card_key_driver, "alert": card_alert, "cleaning": panel_cleaning}
+# ---------------------------------------------------------------------------
+# The data-prep autonomy spectrum. Not generated from the DB — this is the
+# design artifact behind the cleaning stage: which prep decisions the agent may
+# make alone, and which ones need Maya. Bands are ordered by the only thing
+# that matters for the interface: how confident the agent can be that a single
+# right answer exists.
+BANDS = [
+    dict(band="var(--c1)", posture="Just do it", conf=4, conf_lbl="settled",
+         h="Decided in the skill",
+         rule="One right answer, nothing lost. Surfacing it would only spend attention.",
+         tasks=["parse timestamps to one type", "trim whitespace on join keys",
+                'read <code>"1,024"</code> as a number', "detect encoding &amp; delimiter",
+                "drop fully empty columns"],
+         sees_dt="Maya sees", sees="Nothing."),
+    dict(band="var(--c2)", posture="Do it, then say so", conf=3, conf_lbl="strong convention",
+         h="Agent assumes, Maya is told",
+         rule="One dominant convention — but values change, so it goes on the record.",
+         tasks=["<code>emea</code> / <code>E.M.E.A</code> / <code>&quot; EMEA &quot;</code> → <code>EMEA</code>",
+                "exact duplicate <code>session_id</code> rows",
+                "timestamps → one timezone", "consistent week boundaries"],
+         sees_dt="Maya sees", sees="One line in the answer: &ldquo;normalised 4 region "
+                 "spellings, dropped 35 duplicate rows.&rdquo; Undoable after, not gated before."),
+    dict(band="var(--tertiary)", posture="Propose, then wait", conf=2, conf_lbl="contested",
+         h="Agent offers options, Maya approves",
+         rule="Several defensible answers, and the choice moves the conclusion.",
+         tasks=["missing <code>user_id</code> — flag-and-keep vs drop",
+                "negative <code>duration_sec</code> — exclude / clamp / null",
+                "outlier sessions — winsorise vs keep",
+                "near-duplicates (same user, same minute)", "backfill cutoff"],
+         sees_dt="Maya sees", sees="The approval panel — each option with a sample and "
+                 "how many rows it moves. Approve or skip, per issue."),
+    dict(band="var(--error)", posture="Ask — only Maya knows", conf=0, conf_lbl="not in the data",
+         h="Maya provides, agent records",
+         rule="Not a confidence problem — the answer isn't in the data, so no default is safe.",
+         tasks=["&ldquo;active user&rdquo; = distinct <code>user_id</code>?",
+                "<code>duration_sec</code> vs <code>active_sec</code>",
+                "exclude internal / QA accounts?",
+                "which error rate is worth interrupting for",
+                "<code>user_type</code> vs <code>plan</code>"],
+         sees_dt="Maya gives", sees="A question, asked once — then written into "
+                 "<code>data_dictionary.md</code> and never asked again."),
+]
+
+_ARROW_R = ("<svg viewBox='0 0 200 9' preserveAspectRatio='none' aria-hidden='true'>"
+            "<line x1='0' y1='4.5' x2='193' y2='4.5' stroke='currentColor' stroke-width='1'/>"
+            "<polygon points='200,4.5 191,0.5 191,8.5' fill='currentColor'/></svg>")
+_ARROW_L = ("<svg viewBox='0 0 200 9' preserveAspectRatio='none' aria-hidden='true'>"
+            "<line x1='7' y1='4.5' x2='200' y2='4.5' stroke='currentColor' stroke-width='1'/>"
+            "<polygon points='0,4.5 9,0.5 9,8.5' fill='currentColor'/></svg>")
+_ARROW_L_DASH = ("<svg viewBox='0 0 200 9' preserveAspectRatio='none' aria-hidden='true'>"
+                 "<line x1='7' y1='4.5' x2='200' y2='4.5' stroke='currentColor' stroke-width='1'"
+                 " stroke-dasharray='4 4'/>"
+                 "<polygon points='0,4.5 9,0.5 9,8.5' fill='currentColor'/></svg>")
+
+
+def spectrum_body():
+    """Body markup for the spectrum (shared by the report page and the artifact)."""
+    rail = "".join(f"<span style=\"--band:{b['band']}\"></span>" for b in BANDS)
+    cards = ""
+    for b in BANDS:
+        dots = "".join(
+            f"<i class='{'on' if i < b['conf'] else ('off' if b['conf'] == 0 else '')}'></i>"
+            for i in range(4))
+        tasks = "".join(f"<li>{t}</li>" for t in b["tasks"])
+        cards += f"""
+      <article class="spec-band" style="--band:{b['band']}">
+        <div class="spec-band__posture">{b['posture']}</div>
+        <h2 class="spec-band__h">{b['h']}</h2>
+        <p class="spec-band__rule">{b['rule']}</p>
+        <div class="spec-meter">
+          <div class="spec-meter__dots">{dots}</div>
+          <div class="spec-meter__lbl">{b['conf_lbl']}</div>
+        </div>
+        <ul class="spec-tasks">{tasks}</ul>
+        <dl class="spec-band__sees"><dt>{b['sees_dt']}</dt><dd>{b['sees']}</dd></dl>
+      </article>"""
+    return f"""
+    <div class="spec-root">
+      <header class="spec-head">
+        <span class="m3-label">Data preparation · autonomy design</span>
+        <h1 class="spec-title">How much of the cleaning should Maya ever see?</h1>
+        <p class="spec-lede">Each prep task sits where it does for one reason: <b>how confident
+        the agent can be that a single right answer exists</b>. As that confidence falls, control
+        and transparency get handed back.</p>
+      </header>
+
+      <div class="spec-axes">
+        <div class="spec-axis"><span>Agent confidence in one right answer</span>{_ARROW_L}</div>
+        <div class="spec-axis">{_ARROW_R}<span>User control &amp; transparency</span></div>
+      </div>
+
+      <div class="spec-rail">{rail}</div>
+      <div class="spec-grid">{cards}</div>
+
+      <div class="spec-return">{_ARROW_L_DASH}
+        <span><b>Answered once, a task moves left.</b> A ratified definition becomes a written
+        rule the agent applies silently — the spectrum is a starting position, not a fixed one.</span>
+      </div>
+
+      <section class="spec-note">
+        <h3>Placing a new task</h3>
+        <p>Each <em>yes</em> moves it one band right. Get it wrong on the left and you ship silent
+        wrong answers; wrong on the right and you get twelve dialogs, all approved unread.</p>
+        <ol class="spec-test">
+          <li>Is there more than one defensible answer?</li>
+          <li>Would a different choice change the conclusion Maya acts on?</li>
+          <li>Does answering it need knowledge that isn't in the data?</li>
+        </ol>
+      </section>
+    </div>"""
+
+
+def spectrum():
+    return _write("spectrum_data_prep.html",
+                  _page("Data-prep autonomy spectrum", spectrum_body()))
+
+
+BUILDERS = {"key-driver": card_key_driver, "alert": card_alert, "cleaning": panel_cleaning,
+            "spectrum": spectrum}
 
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "all"
@@ -223,5 +342,5 @@ if __name__ == "__main__":
     elif cmd in BUILDERS:
         BUILDERS[cmd]()
     else:
-        print("usage: components.py [key-driver|alert|cleaning|all]")
+        print("usage: components.py [key-driver|alert|cleaning|spectrum|all]")
         sys.exit(1)

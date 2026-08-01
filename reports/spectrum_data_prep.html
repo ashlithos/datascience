@@ -1,4 +1,4 @@
-/* ===========================================================================
+<!doctype html><html><head><meta charset='utf-8'><title>Data-prep autonomy spectrum</title><style>/* ===========================================================================
    FlowDash DS-Agent — design tokens, reskinned to the Jetski design system.
    Source of truth: jetski-design/{DESIGN.md, globals.css, ui.tsx} (Material 3
    dark, Google-blue primary + cyan secondary). This is the ONLY place style
@@ -219,3 +219,81 @@ body:not(.ds-root) { margin: 0; padding: 28px 24px; background: var(--background
 @keyframes fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .ds-card { animation: fade-up .32s cubic-bezier(0.2,0,0,1) both; }
 @media (prefers-reduced-motion: reduce) { .ds-card { animation: none; } * { transition-duration: .01ms !important; } }
+</style></head><body class='ds-root'>
+    <div class="spec-root">
+      <header class="spec-head">
+        <span class="m3-label">Data preparation · autonomy design</span>
+        <h1 class="spec-title">How much of the cleaning should Maya ever see?</h1>
+        <p class="spec-lede">Each prep task sits where it does for one reason: <b>how confident
+        the agent can be that a single right answer exists</b>. As that confidence falls, control
+        and transparency get handed back.</p>
+      </header>
+
+      <div class="spec-axes">
+        <div class="spec-axis"><span>Agent confidence in one right answer</span><svg viewBox='0 0 200 9' preserveAspectRatio='none' aria-hidden='true'><line x1='7' y1='4.5' x2='200' y2='4.5' stroke='currentColor' stroke-width='1'/><polygon points='0,4.5 9,0.5 9,8.5' fill='currentColor'/></svg></div>
+        <div class="spec-axis"><svg viewBox='0 0 200 9' preserveAspectRatio='none' aria-hidden='true'><line x1='0' y1='4.5' x2='193' y2='4.5' stroke='currentColor' stroke-width='1'/><polygon points='200,4.5 191,0.5 191,8.5' fill='currentColor'/></svg><span>User control &amp; transparency</span></div>
+      </div>
+
+      <div class="spec-rail"><span style="--band:var(--c1)"></span><span style="--band:var(--c2)"></span><span style="--band:var(--tertiary)"></span><span style="--band:var(--error)"></span></div>
+      <div class="spec-grid">
+      <article class="spec-band" style="--band:var(--c1)">
+        <div class="spec-band__posture">Just do it</div>
+        <h2 class="spec-band__h">Decided in the skill</h2>
+        <p class="spec-band__rule">One right answer, nothing lost. Surfacing it would only spend attention.</p>
+        <div class="spec-meter">
+          <div class="spec-meter__dots"><i class='on'></i><i class='on'></i><i class='on'></i><i class='on'></i></div>
+          <div class="spec-meter__lbl">settled</div>
+        </div>
+        <ul class="spec-tasks"><li>parse timestamps to one type</li><li>trim whitespace on join keys</li><li>read <code>"1,024"</code> as a number</li><li>detect encoding &amp; delimiter</li><li>drop fully empty columns</li></ul>
+        <dl class="spec-band__sees"><dt>Maya sees</dt><dd>Nothing.</dd></dl>
+      </article>
+      <article class="spec-band" style="--band:var(--c2)">
+        <div class="spec-band__posture">Do it, then say so</div>
+        <h2 class="spec-band__h">Agent assumes, Maya is told</h2>
+        <p class="spec-band__rule">One dominant convention — but values change, so it goes on the record.</p>
+        <div class="spec-meter">
+          <div class="spec-meter__dots"><i class='on'></i><i class='on'></i><i class='on'></i><i class=''></i></div>
+          <div class="spec-meter__lbl">strong convention</div>
+        </div>
+        <ul class="spec-tasks"><li><code>emea</code> / <code>E.M.E.A</code> / <code>&quot; EMEA &quot;</code> → <code>EMEA</code></li><li>exact duplicate <code>session_id</code> rows</li><li>timestamps → one timezone</li><li>consistent week boundaries</li></ul>
+        <dl class="spec-band__sees"><dt>Maya sees</dt><dd>One line in the answer: &ldquo;normalised 4 region spellings, dropped 35 duplicate rows.&rdquo; Undoable after, not gated before.</dd></dl>
+      </article>
+      <article class="spec-band" style="--band:var(--tertiary)">
+        <div class="spec-band__posture">Propose, then wait</div>
+        <h2 class="spec-band__h">Agent offers options, Maya approves</h2>
+        <p class="spec-band__rule">Several defensible answers, and the choice moves the conclusion.</p>
+        <div class="spec-meter">
+          <div class="spec-meter__dots"><i class='on'></i><i class='on'></i><i class=''></i><i class=''></i></div>
+          <div class="spec-meter__lbl">contested</div>
+        </div>
+        <ul class="spec-tasks"><li>missing <code>user_id</code> — flag-and-keep vs drop</li><li>negative <code>duration_sec</code> — exclude / clamp / null</li><li>outlier sessions — winsorise vs keep</li><li>near-duplicates (same user, same minute)</li><li>backfill cutoff</li></ul>
+        <dl class="spec-band__sees"><dt>Maya sees</dt><dd>The approval panel — each option with a sample and how many rows it moves. Approve or skip, per issue.</dd></dl>
+      </article>
+      <article class="spec-band" style="--band:var(--error)">
+        <div class="spec-band__posture">Ask — only Maya knows</div>
+        <h2 class="spec-band__h">Maya provides, agent records</h2>
+        <p class="spec-band__rule">Not a confidence problem — the answer isn't in the data, so no default is safe.</p>
+        <div class="spec-meter">
+          <div class="spec-meter__dots"><i class='off'></i><i class='off'></i><i class='off'></i><i class='off'></i></div>
+          <div class="spec-meter__lbl">not in the data</div>
+        </div>
+        <ul class="spec-tasks"><li>&ldquo;active user&rdquo; = distinct <code>user_id</code>?</li><li><code>duration_sec</code> vs <code>active_sec</code></li><li>exclude internal / QA accounts?</li><li>which error rate is worth interrupting for</li><li><code>user_type</code> vs <code>plan</code></li></ul>
+        <dl class="spec-band__sees"><dt>Maya gives</dt><dd>A question, asked once — then written into <code>data_dictionary.md</code> and never asked again.</dd></dl>
+      </article></div>
+
+      <div class="spec-return"><svg viewBox='0 0 200 9' preserveAspectRatio='none' aria-hidden='true'><line x1='7' y1='4.5' x2='200' y2='4.5' stroke='currentColor' stroke-width='1' stroke-dasharray='4 4'/><polygon points='0,4.5 9,0.5 9,8.5' fill='currentColor'/></svg>
+        <span><b>Answered once, a task moves left.</b> A ratified definition becomes a written
+        rule the agent applies silently — the spectrum is a starting position, not a fixed one.</span>
+      </div>
+
+      <section class="spec-note">
+        <h3>Placing a new task</h3>
+        <p>Each <em>yes</em> moves it one band right. Get it wrong on the left and you ship silent
+        wrong answers; wrong on the right and you get twelve dialogs, all approved unread.</p>
+        <ol class="spec-test">
+          <li>Is there more than one defensible answer?</li>
+          <li>Would a different choice change the conclusion Maya acts on?</li>
+          <li>Does answering it need knowledge that isn't in the data?</li>
+        </ol>
+      </section>
+    </div></body></html>
